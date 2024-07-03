@@ -31,6 +31,15 @@ class GDPlayer(object):
         else:
             self.oppo_dicts = cardsToDict(cards)
 
+    def make_action(self, greatest_action : Optional[List]) -> Optional[List]:
+        pass
+    
+    def remove_cards(self, cards : List[str]) -> List[str]:
+        temp = self.card_dict.copy()
+        for card in cards:
+            temp[card] -= 1
+        return cardDictToList(temp)
+
     def update_after_action(self, oppo_action : Optional[List], index : int) -> None:
         if oppo_action is not None:
             self.greater_pos = index
@@ -63,6 +72,6 @@ class GDPlayer(object):
         if index == self.my_pos:
             return -1
         elif index > self.my_pos:
-            return index - self.my_pos - 1
+            return index - self.my_pos
         else:
-            return index + 3 - self.my_pos
+            return index + 4 - self.my_pos
