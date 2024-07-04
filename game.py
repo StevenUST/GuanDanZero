@@ -56,6 +56,7 @@ class PokerGame:
         print(f"Player 1: {hand1}")
         print(f"Player 2: {hand2}")
 
+
 if __name__ == "__main__":
     game = PokerGame()
     game.deal_hands()
