@@ -3,7 +3,7 @@ from time import time
 from itertools import combinations, product
 from numpy import random
 
-# random.seed(123123)
+#random.seed(123123)
 
 SUITS : Final[List[str]] = ['S', 'H', 'C', 'D']
 
@@ -68,7 +68,7 @@ def cardToNum(card : str) -> int:
             num : int = int(number) - 2
         else:
             num : int = CardNumToNum[number] - 2
-        return suit * 13 + num
+        return SuitToNum[suit] * 13 + num
     else:
         raise ValueError("The input card is illegal!")
 
@@ -186,12 +186,14 @@ def generateNRandomCardLists(nums : Tuple) -> List[List[str]]:
     
     dummy_card_dict = randomCardDict(total_num)
     dummy_card_list = cardDictToList(dummy_card_dict)
+    random.shuffle(dummy_card_list)
     
     lists = list()
     current_num = 0
     
     for num in nums:
-        lists.append(dummy_card_list[current_num : current_num + num])
+        temp = dummy_card_list[current_num : current_num + num].copy()
+        lists.append(temp)
         current_num += num
     
     return lists
@@ -798,9 +800,9 @@ def powerOfStraight(straight : List[str], heart_level_card : str) -> int:
     p = NumToCardNum[num] if num == 1 or num == 10 else str(num)
     return p
 
-def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, int], action : Optional[List]) -> bool:
+def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, int], action : Optional[List]) -> Tuple[bool, List[List]]:
     if action == None:
-        return True
+        return True, card_combs.copy()
     
     contain_action = False
     
@@ -809,7 +811,7 @@ def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, in
             contain_action = True
     
     if not contain_action:
-        return False
+        return False, card_combs.copy()
     
     action_dict = cardsToDict(action[2], 0)
     _ = action_dict.pop('total')
@@ -834,8 +836,7 @@ def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, in
         if can_be_added:
             new_combs.append(comb)
     
-    card_combs = new_combs.copy()
-    return True
+    return True, new_combs
 
 def isSameAction(action1 : List[str], action2 : List[str]) -> bool:
     if action1[0] != action2[0]:
@@ -850,4 +851,15 @@ def isSameAction(action1 : List[str], action2 : List[str]) -> bool:
     return True
 
 if __name__ == "__main__":
-    pass
+    card_lists = generateNRandomCardLists((12, ))
+    card_dict = cardsToDict(card_lists[0])
+    card_comb = findAllCombs(card_dict, 1)
+    action = ['Single', '2', ['H2']]
+    print(card_comb)
+    print(card_dict)
+    print(action)
+    ans, card_comb = updateCardCombsAfterAction(card_comb, card_dict, action)
+    print(ans)
+    print(card_comb)
+    print(card_dict)
+    
