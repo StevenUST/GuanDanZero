@@ -1,7 +1,9 @@
 import tensorflow as tf
 
-from typing import List
+from typing import List, Tuple
 from numpy import ndarray as nplist
+
+tf.compat.v1.disable_eager_execution()
 
 class GuandanNetBase():
     
@@ -27,7 +29,6 @@ class GuandanNetForTwo_M1(GuandanNetBase):
 
     def __init__(self, model_file=None):
         super().__init__()
-        tf.compat.v1.disable_eager_execution()
         # (smallest number card to biggest number card, then SB and HR)
         self.input_my_hand_card1 = tf.compat.v1.placeholder(tf.float32, shape=[None, 15, 1])
         # (smallest number card to biggest number card, without SB and HR)
@@ -119,8 +120,96 @@ class GuandanNetForTwo_M1(GuandanNetBase):
                        self.universal_states : u_states}
         )
         return log_act_prob
+    
+    def train_step(self, my_states : List, oppo_states : List, u_states : List, prob_label : List):
+        # """perform a training step"""
+        loss, _ = self.session.run(
+            [self.loss, self.optimizer],
+            feed_dict={self.input_my_hand_card1 : my_states[0],
+                       self.input_my_hand_card2 : my_states[1],
+                       self.input_my_hand_card3 : my_states[2],
+                       self.input_my_other_states : my_states[3],
+                       self.input_oppo_hand_card1 : oppo_states[0],
+                       self.input_oppo_hand_card2 : oppo_states[1],
+                       self.input_oppo_hand_card3 : oppo_states[2],
+                       self.input_oppo_other_states : oppo_states[3],
+                       self.universal_states : u_states,
+                       self.policy_prob_label : prob_label,
+                       self.learning_rate : self.lr}
+        )
+        return loss
 
 class GuandanNetForTwo_M2(GuandanNetBase):
     
     def __init__(self, model_file = None) -> None:
         super().__init__()
+        
+        self.my_action_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 10])
+        self.my_action_ranking = tf.compat.v1.placeholder(tf.float32, shape=[None, 16])
+        self.joker_bomb_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
+        self.action_wild_card_num = tf.compat.v1.placeholder(tf.float32, shape=[None, 3])
+        self.wild_card_utlization = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        self.hand_card_after_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
+        self.oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
+        self.left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.oppo_left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        
+        self.concatenation_layer = tf.keras.layers.Concatenate()([self.my_action_type, self.my_action_ranking, self.joker_bomb_action,
+                                                                  self.action_wild_card_num, self.wild_card_utlization, self.hand_card_after_action,
+                                                                  self.oppo_hand_card, self.left_action, self.oppo_left_action])
+        
+        self.layer1 = tf.keras.layers.Dense(units=512, activation=tf.nn.relu)(self.concatenation_layer)
+        self.layer2 = tf.keras.layers.Dense(units=512, activation=tf.nn.relu)(self.layer1)
+        self.layer3 = tf.keras.layers.Dense(units=256, activation=tf.nn.relu)(self.layer2)
+        self.layer4 = tf.keras.layers.Dense(units=128, activation=tf.nn.relu)(self.layer3)
+        self.layer5 = tf.keras.layers.Dense(units=64, activation=tf.nn.relu)(self.layer4)
+        self.q_value = tf.keras.layers.Dense(units=1)(self.layer5)
+        self.action_prob = tf.keras.layers.Dense(units=1)(self.layer5)
+        
+        self.q_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        self.action_prob_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        
+        self.q_loss = tf.losses.mean_squared_error(self.q_value, self.q_label)
+        self.prob_loss = tf.losses.mean_squared_error(self.action_prob, self.action_prob_label)
+        self.loss = self.q_loss + self.prob_loss
+        self.learning_rate = tf.compat.v1.placeholder(tf.float32)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(
+                learning_rate=self.learning_rate).minimize(self.loss)
+        
+        if model_file is not None:
+            self.restore_model(model_file)
+    
+    def get_value_and_prob(self, my_action_data : List, oppo_data : List, left_action : List):
+        q_value, action_prob = self.session.run(
+            [self.q_value, self.action_prob],
+            feed_dict={self.my_action_type : my_action_data[0],
+                       self.my_action_ranking : my_action_data[1],
+                       self.joker_bomb_action : my_action_data[2],
+                       self.action_wild_card_num : my_action_data[3],
+                       self.wild_card_utlization : my_action_data[4],
+                       self.hand_card_after_action : my_action_data[5],
+                       self.oppo_hand_card : oppo_data,
+                       self.left_action : left_action[0],
+                       self.oppo_left_action : left_action[1]}
+        )
+        return q_value, action_prob
+    
+    def train_step(self, my_action_data : List, oppo_data : List, left_action : List, q_label : List, prob_label : List):
+        loss, _ = self.session.run(
+            [self.loss, self.optimizer],
+            feed_dict={self.my_action_type : my_action_data[0],
+                       self.my_action_ranking : my_action_data[1],
+                       self.joker_bomb_action : my_action_data[2],
+                       self.action_wild_card_num : my_action_data[3],
+                       self.wild_card_utlization : my_action_data[4],
+                       self.hand_card_after_action : my_action_data[5],
+                       self.oppo_hand_card : oppo_data,
+                       self.left_action : left_action[0],
+                       self.oppo_left_action : left_action[1],
+                       self.q_label : q_label,
+                       self.action_prob_label : prob_label,
+                       self.learning_rate : self.lr}
+        )
+        return loss
+        
+        

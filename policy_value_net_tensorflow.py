@@ -74,7 +74,7 @@ class PolicyValueNet():
                 tf.reduce_sum(tf.multiply(self.mcts_probs, self.action_fc), 1)))
         # 3-3. L2 penalty (regularization)
         l2_penalty_beta = 1e-4
-        vars = tf.trainable_variables()
+        vars = tf.compat.v1.trainable_variables()
         l2_penalty = l2_penalty_beta * tf.add_n(
             [tf.nn.l2_loss(v) for v in vars if 'bias' not in v.name.lower()])
         # 3-4 Add up to be the Loss function
