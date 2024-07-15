@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from numpy import ndarray as nplist
 
 tf.compat.v1.disable_eager_execution()
@@ -9,11 +9,8 @@ class GuandanNetBase():
     
     def __init__(self, learning_rate : float = 0.01) -> None:
         self.lr = learning_rate
-        self.saver = tf.compat.v1.train.Saver()
-        self.session = tf.compat.v1.Session()
-        
-        init = tf.compat.v1.global_variables_initializer()
-        self.session.run(init)
+        self.saver : Optional[tf.compat.v1.train.Saver] = None
+        self.session : Optional[tf.compat.v1.Session] = None
 
     def update_learning_rate(self, lr : float) -> None:
         assert lr > 0.0
@@ -35,7 +32,7 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         self.input_my_hand_card2 = tf.compat.v1.placeholder(tf.float32, shape=[None, 13, 1])
         # (From A to K then finally A, but with suits)
         self.input_my_hand_card3 = tf.compat.v1.placeholder(tf.float32, shape=[None, 14, 4])
-        # (hand_card_num (>=20, 19-12, 11-7, 6, 5, 4, 3, 2, 1), wild_card_num(0, 1, 2), can_win_in_one_shot(cannot, can))
+        # (hand_card_num (>=20, 19-12, 11-7, 6, 5, 4, 3, 2, 1), wild_card_num(0, 1, 2), joker_bomb_flag(no, yes))
         self.input_my_other_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 14])
         
         # (smallest number card to biggest number card, then SB and HR)
@@ -44,21 +41,21 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         self.input_oppo_hand_card2 = tf.compat.v1.placeholder(tf.float32, shape=[None, 13, 1])
         # (From A to K then finally A, but with suits)
         self.input_oppo_hand_card3 = tf.compat.v1.placeholder(tf.float32, shape=[None, 14, 4])
-        # (hand_card_num (>=20, 19-12, 11-7, 6, 5, 4, 3, 2, 1), wild_card_num(0, 1, 2), can_win_in_one_shot(cannot, can))
+        # (hand_card_num (>=20, 19-12, 11-7, 6, 5, 4, 3, 2, 1), wild_card_num(0, 1, 2), joker_bomb_flag(no, yes))
         self.input_oppo_other_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 14])
         
-        # (last action type (PASS, Single, Pair, Trip, ThreeWithTwo, TwoTrips, ThreePairs, Straight, Bomb, StraightFlush), 
+        # (last action type (PASS, Single, Pair, Trip, ThreeWithTwo, TwoTrips, ThreePairs, Straight, Bomb * 7, StraightFlush), 
         # last action ranking (0 to level card, then SB and HR; For PASS, it is 0))
-        self.universal_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 26])
+        self.universal_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 32])
         
         self.conv_hc1 = tf.keras.layers.Conv1D(filters=20, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_my_hand_card1)
-        self.conv_hc2 = tf.keras.layers.Conv1D(filters=20, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_my_hand_card2)
+        self.conv_hc2 = tf.keras.layers.Conv1D(filters=30, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_my_hand_card2)
         self.conv_hc3_1 = tf.keras.layers.Conv1D(filters=10, kernel_size=[2], padding="same", activation=tf.nn.relu)(self.input_my_hand_card3)
         self.conv_hc3_2 = tf.keras.layers.Conv1D(filters=10, kernel_size=[3], padding="same", activation=tf.nn.relu)(self.input_my_hand_card3)
         self.conv_hc3_3 = tf.keras.layers.Conv1D(filters=20, kernel_size=[5], padding="same", activation=tf.nn.relu)(self.input_my_hand_card3)
         
         self.conv_oppo_hc1 = tf.keras.layers.Conv1D(filters=20, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card1)
-        self.conv_oppo_hc2 = tf.keras.layers.Conv1D(filters=20, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card2)
+        self.conv_oppo_hc2 = tf.keras.layers.Conv1D(filters=30, kernel_size=[1], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card2)
         self.conv_oppo_hc3_1 = tf.keras.layers.Conv1D(filters=10, kernel_size=[2], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card3)
         self.conv_oppo_hc3_2 = tf.keras.layers.Conv1D(filters=10, kernel_size=[3], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card3)
         self.conv_oppo_hc3_3 = tf.keras.layers.Conv1D(filters=20, kernel_size=[5], padding="same", activation=tf.nn.relu)(self.input_oppo_hand_card3)
@@ -87,22 +84,26 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         
         # (PASS, Single(15), Pair(15), Trip(13), ThreeWithTwo(13), TwoTrips(13), ThreePairs(12), Straight(10), Bomb(91), StraightFlush(10), JOKER BOMB(1))
         self.policy_prob = tf.keras.layers.Dense(units=194)(self.layer5)
+        self.q_value = tf.keras.layers.Dense(units=1)(self.layer5)
         self.policy_prob_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 194])
-        self.loss = tf.negative(tf.reduce_mean(
+        self.q_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        self.policy_loss = tf.negative(tf.reduce_mean(
                 tf.reduce_sum(tf.multiply(self.policy_prob, self.policy_prob_label), 1)))
+        self.q_loss = tf.losses.mean_squared_error(self.q_label, self.q_value)
+        self.loss = self.policy_loss + self.q_loss
         self.learning_rate = tf.compat.v1.placeholder(tf.float32)
         self.optimizer = tf.compat.v1.train.AdamOptimizer(
                 learning_rate=self.learning_rate).minimize(self.loss)
 
         # # Make a session
-        # self.session = tf.compat.v1.Session()
+        self.session = tf.compat.v1.Session()
 
         # Initialize variables
-        # init = tf.compat.v1.global_variables_initializer()
-        # self.session.run(init)
+        init = tf.compat.v1.global_variables_initializer()
+        self.session.run(init)
 
-        # # For saving and restoring
-        # self.saver = tf.compat.v1.train.Saver()
+        # For saving and restoring
+        self.saver = tf.compat.v1.train.Saver()
         if model_file is not None:
             self.restore_model(model_file)
     
@@ -121,7 +122,7 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         )
         return log_act_prob
     
-    def train_step(self, my_states : List, oppo_states : List, u_states : List, prob_label : List):
+    def train_step(self, my_states : List, oppo_states : List, u_states : List, prob_label : List, final_score : List):
         # """perform a training step"""
         loss, _ = self.session.run(
             [self.loss, self.optimizer],
@@ -135,6 +136,7 @@ class GuandanNetForTwo_M1(GuandanNetBase):
                        self.input_oppo_other_states : oppo_states[3],
                        self.universal_states : u_states,
                        self.policy_prob_label : prob_label,
+                       self.q_label : final_score,
                        self.learning_rate : self.lr}
         )
         return loss
@@ -144,17 +146,18 @@ class GuandanNetForTwo_M2(GuandanNetBase):
     def __init__(self, model_file = None) -> None:
         super().__init__()
         
-        self.my_action_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 10])
-        self.my_action_ranking = tf.compat.v1.placeholder(tf.float32, shape=[None, 16])
+        self.action_card_with_suit = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
         self.joker_bomb_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
         self.action_wild_card_num = tf.compat.v1.placeholder(tf.float32, shape=[None, 3])
         self.wild_card_utlization = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
-        self.hand_card_after_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
-        self.oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
+        self.hand_card_after_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 56])
+        self.oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
         self.left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.win_in_one_shot = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
         self.oppo_left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.oppo_win_in_one_shot = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
         
-        self.concatenation_layer = tf.keras.layers.Concatenate()([self.my_action_type, self.my_action_ranking, self.joker_bomb_action,
+        self.concatenation_layer = tf.keras.layers.Concatenate()([self.action_card_with_suit, self.joker_bomb_action,
                                                                   self.action_wild_card_num, self.wild_card_utlization, self.hand_card_after_action,
                                                                   self.oppo_hand_card, self.left_action, self.oppo_left_action])
         
@@ -176,18 +179,27 @@ class GuandanNetForTwo_M2(GuandanNetBase):
         self.optimizer = tf.compat.v1.train.AdamOptimizer(
                 learning_rate=self.learning_rate).minimize(self.loss)
         
+        # # Make a session
+        self.session = tf.compat.v1.Session()
+
+        # Initialize variables
+        init = tf.compat.v1.global_variables_initializer()
+        self.session.run(init)
+
+        # # For saving and restoring
+        self.saver = tf.compat.v1.train.Saver()
+        
         if model_file is not None:
             self.restore_model(model_file)
     
     def get_value_and_prob(self, my_action_data : List, oppo_data : List, left_action : List):
         q_value, action_prob = self.session.run(
             [self.q_value, self.action_prob],
-            feed_dict={self.my_action_type : my_action_data[0],
-                       self.my_action_ranking : my_action_data[1],
-                       self.joker_bomb_action : my_action_data[2],
-                       self.action_wild_card_num : my_action_data[3],
-                       self.wild_card_utlization : my_action_data[4],
-                       self.hand_card_after_action : my_action_data[5],
+            feed_dict={self.action_card_with_suit : my_action_data[0],
+                       self.joker_bomb_action : my_action_data[1],
+                       self.action_wild_card_num : my_action_data[2],
+                       self.wild_card_utlization : my_action_data[3],
+                       self.hand_card_after_action : my_action_data[4],
                        self.oppo_hand_card : oppo_data,
                        self.left_action : left_action[0],
                        self.oppo_left_action : left_action[1]}
@@ -197,12 +209,11 @@ class GuandanNetForTwo_M2(GuandanNetBase):
     def train_step(self, my_action_data : List, oppo_data : List, left_action : List, q_label : List, prob_label : List):
         loss, _ = self.session.run(
             [self.loss, self.optimizer],
-            feed_dict={self.my_action_type : my_action_data[0],
-                       self.my_action_ranking : my_action_data[1],
-                       self.joker_bomb_action : my_action_data[2],
-                       self.action_wild_card_num : my_action_data[3],
-                       self.wild_card_utlization : my_action_data[4],
-                       self.hand_card_after_action : my_action_data[5],
+            feed_dict={self.action_card_with_suit : my_action_data[0],
+                       self.joker_bomb_action : my_action_data[1],
+                       self.action_wild_card_num : my_action_data[2],
+                       self.wild_card_utlization : my_action_data[3],
+                       self.hand_card_after_action : my_action_data[4],
                        self.oppo_hand_card : oppo_data,
                        self.left_action : left_action[0],
                        self.oppo_left_action : left_action[1],

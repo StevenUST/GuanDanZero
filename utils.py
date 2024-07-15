@@ -141,6 +141,12 @@ def isLegalCardDict(card_dict : Dict[str, int]) -> bool:
         print("The number of cards does not match the counter value!!!")
         return False
 
+def numOfWildCard(card_dict : Dict[str, int], level : int) -> List:
+    """
+    return the number of wild card in the hand cards.
+    """
+    return card_dict[getHeartLevelCard(level)]
+
 def randomCardDict(num : int) -> Dict[str, int]:
     if num > 108:
         num = 108
