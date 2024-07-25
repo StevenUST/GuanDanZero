@@ -1,4 +1,4 @@
-from typing import List, Dict, Final, Optional, Tuple
+from typing import List, Dict, Final, Optional, Tuple, Union, Iterable
 from time import time
 from itertools import combinations, product
 from numpy import random
@@ -40,6 +40,23 @@ def getHeartLevelCard(level : int) -> str:
         heart_level_card += NumToCardNum[level + 1]
     return heart_level_card
 
+def isLargerThanRank(r1 : str, r2 : str, level : Optional[int]) -> bool:
+    '''
+    return @param r1 > @param r2 base on @param level
+    '''
+    if level is None:
+        p = POWERS[:12].copy()
+        p.insert(0, 'A')
+        return p.index(r1) > p.index(r2)
+    else:
+        p = POWERS.copy()
+        _ = p.pop(level - 1)
+        if level >= 9:
+            p.insert(12, NumToCardNum[level + 1])
+        else:
+            p.insert(12, str(level + 1))
+        return p.index(r1) > p.index(r2)
+
 def isLegalCard(card : str) -> bool:
     if len(card) != 2:
         return False
@@ -58,6 +75,32 @@ def isLegalCard(card : str) -> bool:
            return False
         return True
 
+def addCardToDict(cards : Union[str, List[str]], card_dict : Dict[str, int]) -> bool:
+    if isinstance(cards, str):
+        if isLegalCard(cards):
+            card_dict[cards] += 1
+            if card_dict[cards] <= 2:
+                card_dict['total'] += 1
+                return True
+            else:
+                card_dict[cards] = 2
+                return False
+        else:
+            return False
+    elif isinstance(cards, Iterable):
+        all_fine = True
+        for card in cards:
+            if isinstance(card, str) and isLegalCard(card):
+                card_dict[card] += 1
+                if card_dict[card] > 2:
+                    all_fine = False
+                    card_dict[card] = 2
+                else:
+                    card_dict['total'] += 1
+            else:
+                all_fine = False
+        return all_fine
+       
 def cardToNum(card : str) -> int:
     if isLegalCard(card):
         if card in ['SB', 'HR']:
@@ -806,6 +849,17 @@ def powerOfStraight(straight : List[str], heart_level_card : str) -> int:
     p = NumToCardNum[num] if num == 1 or num == 10 else str(num)
     return p
 
+def updateCardDictAfterAction(card_dict : Dict[str, int], action : Optional[List]) -> Dict[str, int]:
+    if action == None:
+        return card_dict.copy()
+    
+    answer = card_dict.copy()
+    for card in action[2]:
+        answer[card] -= 1
+        answer['total'] -= 1
+    
+    return answer
+
 def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, int], action : Optional[List]) -> Tuple[bool, List[List]]:
     if action == None:
         return True, card_combs.copy()
@@ -844,7 +898,9 @@ def updateCardCombsAfterAction(card_combs : List[List], card_dict : Dict[str, in
     
     return True, new_combs
 
-def isSameAction(action1 : List[str], action2 : List[str]) -> bool:
+def isSameAction(action1 : Optional[List], action2 : Optional[List]) -> bool:
+    if action1 == None or action2 == None:
+        return action1 == None and action2 == None
     if action1[0] != action2[0]:
         return False
     if action1[1] != action2[1]:
@@ -853,6 +909,68 @@ def isSameAction(action1 : List[str], action2 : List[str]) -> bool:
         return False
     for i in range(len(action1[2])):
         if action1[2][i] != action2[2][i]:
+            return False
+    return True
+
+def filterActions(actions : List[List], base_action : Optional[List], level : int) -> List[List]:
+    if base_action == None:
+        return actions.copy()
+    elif base_action[0] == 'Bomb' and base_action[1] == 'JOKER':
+        return [['PASS', 'PASS', 'PASS']]
+    elif not base_action[0] in ['Bomb', 'StraightFlush']:
+        final_actions = list()
+        final_actions.append(['PASS', 'PASS', 'PASS'])
+        base_rank = base_action[1]
+        for action in actions:
+            temp = action[0]
+            if temp in ['Bomb', 'StraightFlush']:
+                final_actions.append(action.copy())
+            elif temp == base_action[0]:
+                action_rank = action[1]
+                if temp in ['ThreePairs', 'TwoTrips', 'Straight'] and isLargerThanRank(action_rank, base_rank, None):
+                    final_actions.append(action.copy())
+                elif isLargerThanRank(action_rank, base_rank, level):
+                    final_actions.append(action.copy())
+        return final_actions
+    elif base_action[0] == 'StraightFlush':
+        final_actions = list()
+        final_actions.append(['PASS', 'PASS', 'PASS'])
+        base_rank = base_action[1]
+        for action in actions:
+            temp = action[0]
+            if temp == 'Bomb' and (action[1] == 'JOKER' or len(action[2]) >= 6):
+                final_actions.append(action.copy())
+            elif temp == 'StraightFlush':
+                action_rank = action[1]
+                if isLargerThanRank(action_rank, base_rank, None):
+                    final_actions.append(action.copy())
+        return final_actions
+    else:
+        final_actions = list()
+        final_actions.append(['PASS', 'PASS', 'PASS'])
+        base_size = len(base_action[2])
+        base_rank = base_action[1]
+        for action in actions:
+            temp = action[0]
+            if temp == 'StraightFlush':
+                if base_size <= 5:
+                    final_actions.append(action.copy())
+            elif temp == 'Bomb':
+                if action[1] == 'JOKER' or len(action[2]) > base_size:
+                    final_actions.append(action.copy())
+                elif len(action[2]) == base_size:
+                    action_rank = action[1]
+                    if isLargerThanRank(action_rank, base_rank, level):
+                        final_actions.append(action.copy())
+        return final_actions
+
+def passIsFine(oppo_actions : List[List], oppo_card_num : int) -> bool:
+    '''
+    This function returns true if opponent cannot play all the card(s) in one time;\n
+    Else, it returns False.
+    '''
+    for i in range(len(oppo_actions) - 1, -1, -1):
+        if oppo_actions[i][0] != 'PASS' and len(oppo_actions[i][2]) == oppo_card_num:
             return False
     return True
 
