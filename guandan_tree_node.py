@@ -1,10 +1,6 @@
 from abc import abstractmethod
 from typing import List, Set, Dict, Optional
 
-from utils import isSameAction
-
-import collections
-
 def dict_to_str(d : Dict) -> str:
     temp = sorted(d)
     
@@ -13,26 +9,6 @@ def dict_to_str(d : Dict) -> str:
         temp2.append(f"{key}:{d[key]}")
     
     return str(temp2)
-
-def same_dicts(d1 : Dict, d2 : Dict) -> bool:
-    if not d1:
-        return not d2
-    elif not d2:
-        return not d1
-    
-    keys1 = list(d1.keys())
-    keys2 = list(d2.keys())
-    
-    if collections.Counter(keys1) != collections.Counter(keys2):
-        return False
-    
-    keys = keys1.copy()
-    
-    for key in keys:
-        if d1[key] != d2[key]:
-            return False
-    
-    return True
 
 class BaseNode(object):
     
@@ -46,6 +22,9 @@ class BaseNode(object):
     
     def set_reward(self, reward : int) -> None:
         self.reward = reward
+    
+    def is_leaf(self) -> bool:
+        return self.children is None or len(self.children) == 0
     
     @abstractmethod
     def add_child_node(self, child : object, action : Optional[List] = None) -> None:
@@ -79,19 +58,6 @@ class GDNode(BaseNode):
         self.current_greatest_action : Optional[List] = greatest_action
         self.actions : Optional[List] = None
         self.best_child_index : Optional[List] = None
-
-    @staticmethod
-    def create_dummy_node(index : int, card_dict1 : Dict[str, int], card_dict2 : Dict[str, int], layer : int, level : int, greatest_action : Optional[List]) -> object:
-        g : Optional[List] = None
-        if greatest_action is not None:
-            g = greatest_action.copy()
-        return GDNode(index, card_dict1.copy(), card_dict2.copy(), layer, level, g)
-    
-    @staticmethod
-    def create_temp_leaf_node(index : int, layer : int, level : int, reward : int) -> object:
-        node = GDNode(index, dict(), dict(), layer, level, None)
-        node.set_reward(reward)
-        return node
 
     def add_child_node(self, child : object, action : Optional[List] = None) -> None:
         if isinstance(child, GDNode):
@@ -141,26 +107,6 @@ class GDNode(BaseNode):
                     p.remove_child_node(self)
             if len(self.parent) == 0:
                 self.parent = None
-    
-    def reward_back_track(self, reward : int, best_child : Optional[BaseNode]) -> None:
-        if best_child is not None and reward == 1:
-            index : int = self.children.index(best_child)
-            if self.best_child_index is None:
-                self.best_child_index = set()
-            self.best_child_index.append(index)
-        
-        self.reward = max(self.reward, reward)
-        
-        if self.parent is None or len(self.parent) == 0:
-            return
-        else:
-            for p in self.parent:
-                if isinstance(p, GDNode):
-                    p.reward_back_track(reward, \
-                        GDNode.create_dummy_node(self.player_index, self.card_dict1, self.card_dict2, self.layer_num, self.level, self.current_greatest_action))
-
-    def is_leaf(self) -> bool:
-        return self.children is None or len(self.children) == 0
 
     def __str__(self) -> str:
         answer = f"{self.player_index}, "
@@ -177,8 +123,6 @@ class GDNode(BaseNode):
         if not isinstance(other, GDNode):
             return False
         return self.node_index == other.node_index
-        # return self.player_index == other.player_index and same_dicts(self.card_dict1, other.card_dict1) and same_dicts(self.card_dict2, other.card_dict2) \
-        #     and self.layer_num == other.layer_num and self.level == other.level and isSameAction(self.current_greatest_action, other.current_greatest_action)
 
 class GDResultNode(BaseNode):
     

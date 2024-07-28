@@ -1,11 +1,11 @@
-from typing import List, Dict, Tuple, Set, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union
 from queue import Queue
 
 import tensorflow as tf
 import itertools as it
 
-from utils import POWERS, SUITS, NumToCardNum, getHeartLevelCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
-    updateCardDictAfterAction, passIsFine, addCardToDict
+from utils import NumToCardNum, getHeartLevelCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
+    updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce
 
 from guandan_tree_node import GDNode, GDResultNode
 
@@ -77,42 +77,6 @@ def cardDictToListWithMode(card_dict : Dict[str, int], mode : int, level : int) 
     else:
         raise ValueError("@param mode must be either 0, 1 or 2.")
 
-def convertDictByLevel(card_dict : Dict[str, int], level : int) -> Dict[str, int]:
-    p = POWERS.copy()
-    _ = p.pop(level - 1)
-    if level >= 9:
-        p.insert(12, NumToCardNum[level + 1])
-    else:
-        p.insert(12, str(level + 1))
-    p2 = POWERS.copy()
-    final_dict = getCardDict()
-    origin_wild_card = getHeartLevelCard(level)
-    
-    del final_dict['HA']
-    final_dict['*'] = 0
-    
-    if level == 13:
-        keys = card_dict.keys()
-        for key in keys:
-            if key == 'HA':
-                final_dict['*'] = card_dict[key]
-            else:
-                final_dict[key] = card_dict[key]
-    else:
-        for i in range(13):
-            for j in range(4):
-                origin = SUITS[j] + p[i]
-                if origin == origin_wild_card:
-                    final_dict['*'] = card_dict[origin]
-                else:
-                    new = SUITS[j] + p2[i]
-                    final_dict[new] = card_dict[origin]
-    
-    return final_dict           
-
-def findAll_1_1_comb(level : int = 13) -> List[Tuple[str, str]]:
-    current_comb : Set[Tuple[str, str]] = set()
-
 def findAll_2_2_comb(level : int = 13) -> List[Tuple[str, str]]:
     wild_card = getHeartLevelCard(level)
     card_dict = randomCardDict(108)
@@ -158,13 +122,13 @@ def findAll_2_2_comb(level : int = 13) -> List[Tuple[str, str]]:
 
 def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : int) -> Tuple[GDNode, List[GDNode]]:
     '''
-    return the result of player1 use @param cd1 to against player2 with @param cd2.\n
-    @output is either 1 or -1.\n
-    If player1 wins player2 in some way, return 1; Else, return -1 (player1 cannot win player2 even if player1 play first).
+    This function returns the result of player1 use @param cd1 to play against player2 with @param cd2.\n
+    @output the top node and all leaf nodes, which is sorted by their layers in ascending order.\n
+    If player1 wins player2 in some way, the reward of top node is 1; Else, the reward of top node is -1 \
+        (player1 cannot win player2 even if player1 plays first).
     '''
     node_queue = Queue()
     leaf_nodes = list()
-    all_actions = findAllCombs(cd1, level)
     
     top_node = GDNode(0, 0, cd1.copy(), cd2.copy(), 0, level, None)
     
@@ -173,22 +137,8 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
         leaf_nodes.append(None)
         return top_node, leaf_nodes
     
+    node_queue.put(top_node)
     n_index = 1
-    
-    for action in all_actions:
-        left_dict = updateCardDictAfterAction(cd1, action)
-        node = GDNode(1, n_index, cd2, left_dict, 1, level, action)
-        if left_dict['total'] == 0:
-            if node.player_index == 1:
-                node.set_reward(1)
-            else:
-                node.set_reward(-1)
-            leaf_nodes.append(node)
-        node.add_parent(top_node)
-        top_node.add_child_node(node, action)
-        if left_dict['total'] > 0:
-            node_queue.put(node)
-        n_index += 1
     
     while not node_queue.empty():
         node : GDNode = node_queue.get_nowait() 
@@ -196,41 +146,54 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
         l = node.layer_num
         all_actions = findAllCombs(node.card_dict1, level)
         legal_actions = filterActions(all_actions, node.current_greatest_action, level)
-        can_pass = True
-        oppo_actions = findAllCombs(node.card_dict2, level)
-        if len(legal_actions) == 1 and legal_actions[0][0] == 'PASS':
+        play_all_in_once : int = canPlayAllInOnce(legal_actions, node.card_dict1['total'])
+        if play_all_in_once > -1:
+            perfect_action = legal_actions[play_all_in_once]
+            next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), getCardDict(), l + 1, level, perfect_action.copy())
+            if index == 0:
+                next_node.set_reward(1)
+            else:
+                next_node.set_reward(-1)
+            node.add_child_node(next_node, perfect_action.copy())
+            next_node.add_parent(node)
+            n_index += 1
+            leaf_nodes.append([next_node, node])
+        else:
             can_pass = True
-        elif node.current_greatest_action is not None and not passIsFine(oppo_actions, node.card_dict2['total']):
-            can_pass = False
-        temp = list()
-        temp2 = list()
-        for a in legal_actions:
-            if a[0] == 'PASS' and can_pass:
-                next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
-                n_index += 1
-                temp.append((next_node, None, False))
-            elif a[0] != 'PASS':
-                left_dict = updateCardDictAfterAction(node.card_dict1, a)
-                next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a.copy())
-                n_index += 1
-                if left_dict['total'] == 0:
-                    temp2.append(next_node)
-                    temp.append((next_node, a, True))
-                    if node.player_index == 0:
-                        next_node.set_reward(1)
+            oppo_actions = findAllCombs(node.card_dict2, level)
+            if len(legal_actions) == 1 and legal_actions[0][0] == 'PASS':
+                can_pass = True
+            elif node.current_greatest_action is not None and not passIsFine(oppo_actions, node.card_dict2['total']):
+                can_pass = False
+            temp = list()
+            temp2 = list()
+            for a in legal_actions:
+                if a[0] == 'PASS' and can_pass:
+                    next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
+                    n_index += 1
+                    temp.append((next_node, None, False))
+                elif a[0] != 'PASS':
+                    left_dict = updateCardDictAfterAction(node.card_dict1, a)
+                    next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a.copy())
+                    n_index += 1
+                    if left_dict['total'] == 0:
+                        temp2.append(next_node)
+                        temp.append((next_node, a, True))
+                        if node.player_index == 0:
+                            next_node.set_reward(1)
+                        else:
+                            next_node.set_reward(-1)
                     else:
-                        next_node.set_reward(-1)
-                else:
-                    temp.append((next_node, a, False))
-        for t in temp:
-            node.add_child_node(t[0], t[1])
-            t[0].add_parent(node)
-            if not t[2]:
-                node_queue.put(t[0])
-        
-        if len(temp2) > 0:
-            temp2.append(node)
-            leaf_nodes.append(temp2)
+                        temp.append((next_node, a, False))
+            for t in temp:
+                node.add_child_node(t[0], t[1])
+                t[0].add_parent(node)
+                if not t[2]:
+                    node_queue.put(t[0])
+            
+            if len(temp2) > 0:
+                temp2.append(node)
+                leaf_nodes.append(temp2)
 
     return top_node, leaf_nodes
 
@@ -307,6 +270,8 @@ def update_search_tree(leaf_nodes : List[List[Optional[Union[GDResultNode, GDNod
                 if isinstance(node_group[0], GDNode):
                     for i in range(len(node_group) - 1):
                         if node_group[i].reward == 1:
+                            if parent.best_child_index is None:
+                                parent.best_child_index = list()
                             parent.best_child_index.append(i)
             else:
                 parent.set_reward(-1)
@@ -372,7 +337,7 @@ if __name__ == "__main__":
     d2 = getCardDict()
     
     # hand card1 = [H3, H7]
-    _ = addCardToDict(['H3', 'H3', 'H7', 'H7'], d1)
+    _ = addCardToDict(['H3', 'H3', 'S3', 'HA'], d1)
     # hand card2 = [H5, D5]
     _ = addCardToDict(['H7', 'H8', 'H9', 'HA'], d2)
     

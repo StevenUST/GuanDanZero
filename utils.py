@@ -1,4 +1,4 @@
-from typing import List, Dict, Final, Optional, Tuple, Union, Iterable
+from typing import List, Dict, Final, Optional, Tuple, Union, Iterable, Callable
 from time import time
 from itertools import combinations, product
 from numpy import random
@@ -357,6 +357,34 @@ def findAllCombs(card_dict : Dict[str, int], level : int) -> List[List]:
         all_combs.append(new_joker_bomb)
 
     return all_combs
+
+def assignTypeAndRankToAction(actions : List[List[str]], heart_level_card : str, action_type : str) -> List[List]:
+    '''
+    This function does not check whether the action type is same as @param action_type.
+    Please check it carefully before calling this function.\n
+    REMARK: If the action is a JOKER Bomb, set @param action_type to 'JOKERBOMB' and \
+        all actions will be changed to ['Bomb', 'JOKER', ['SB', 'SB', 'HR', 'HR']].
+    '''
+    if len(actions) == 0:
+        return list()
+    
+    if action_type == 'JOKERBOMB':
+        temp = ['Bomb', 'JOKER', ['SB', 'SB', 'HR', 'HR']]
+        answer = list()
+        for _ in range(len(actions)):
+            answer.append(temp.copy())
+        return answer
+    
+    completed_actions = list()
+    type_func : Optional[Callable] = None
+    if action_type in ['Straight', 'StraightFlush']:
+        type_func = powerOfStraight
+    elif action_type == 'ThreePairs':
+        type_func = powerOfThreePairs
+    for action in actions:
+        rank = action[0][1] if type_func is None else type_func(action, heart_level_card)
+        completed_actions.append([action_type, rank, action.copy()])
+    return completed_actions
 
 def findAllSingles(card_dict : Dict[str, int]) -> List[List[str]]:
     singles = list()
@@ -787,6 +815,22 @@ def findAllStraightAndStraightFlush(card_dict: Dict[str, int], heart_level_card 
                 allStraight.append(list(straight))
     return allStraight
 
+def findAllStraight(card_dict : Dict[str, int], heart_level_card : str) -> List[List[str]]:
+    all_straightflush = list()
+    straights = findAllStraightAndStraightFlush(card_dict, heart_level_card)
+    for s in straights:
+        if not isStraightFlush(s):
+            all_straightflush.append(s)
+    return all_straightflush
+
+def findAllStraightFlush(card_dict : Dict[str, int], heart_level_card : str) -> List[List[str]]:
+    all_straightflush = list()
+    straights = findAllStraightAndStraightFlush(card_dict, heart_level_card)
+    for s in straights:
+        if isStraightFlush(s):
+            all_straightflush.append(s)
+    return all_straightflush
+
 def findAllStraightFrom(card_dict : Dict[str, int], heart_level_card : str, current : int, remain : int, num_heart_level_card : int) -> List[List[str]]:
     card_num = NumToCardNum[current] if current == 1 or current >= 10 else str(current)
     answer = list()
@@ -973,6 +1017,20 @@ def passIsFine(oppo_actions : List[List], oppo_card_num : int) -> bool:
         if oppo_actions[i][0] != 'PASS' and len(oppo_actions[i][2]) == oppo_card_num:
             return False
     return True
+
+def canPassOnly(current_action : Optional[List], oppo_actions : List[List], level : int) -> bool:
+    if current_action is None:
+        return False
+    filtered_actions = filterActions(oppo_actions, current_action, level)
+    return len(filtered_actions) == 0
+
+def canPlayAllInOnce(actions : List[List], num_card : int) -> int:
+    index = -1
+    for i in range(len(actions) - 1, -1, -1):
+        if actions[i][0] != 'PASS' and len(actions[i][2]) == num_card:
+            index = i
+            break
+    return index
 
 if __name__ == "__main__":
     card_lists = generateNRandomCardLists((12, ))
