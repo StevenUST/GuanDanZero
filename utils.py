@@ -300,6 +300,9 @@ def findAllCombs(card_dict : Dict[str, int], level : int) -> List[List]:
         If current level card is J, then @param level is 10;\n
         If current level card is A, then @param level is 13.\n
     '''
+    if card_dict['total'] == 0:
+        return list()
+    
     heart_level_card = getHeartLevelCard(level)
     all_combs = list()
     
@@ -322,17 +325,17 @@ def findAllCombs(card_dict : Dict[str, int], level : int) -> List[List]:
     for three_pair in all_three_pairs:
         new_three_pair = ['ThreePairs', powerOfThreePairs(three_pair, heart_level_card), three_pair]
         all_combs.append(new_three_pair)
-    
+
     all_two_trips = findAllTwoTrips(card_dict, heart_level_card, all_trips)
     for two_trip in all_two_trips:
         new_two_trip = ['TwoTrips', two_trip[0][1], two_trip]
         all_combs.append(new_two_trip)
-    
+
     all_three_with_twos = findAllThreeWithTwos(card_dict, heart_level_card, all_pairs, all_trips)
     for three_with_two in all_three_with_twos:
         new_three_with_two = ['ThreeWithTwo', three_with_two[0][1], three_with_two]
         all_combs.append(new_three_with_two)
-    
+
     straights_and_straight_flushes = findAllStraightAndStraightFlush(card_dict, heart_level_card)
     all_straights = list()
     all_straightFlushes = list()
@@ -343,13 +346,12 @@ def findAllCombs(card_dict : Dict[str, int], level : int) -> List[List]:
             all_straights.append(['Straight', powerOfStraight(straight, heart_level_card), straight])
 
     all_combs.extend(all_straights)
+    all_combs.extend(all_straightFlushes)
     
     all_bombs = findAllBombs(card_dict, heart_level_card)
     for bomb in all_bombs:
         new_bomb = ['Bomb', bomb[0][1], bomb]
         all_combs.append(new_bomb)
-    
-    all_combs.extend(all_straightFlushes)
     
     joker_bomb = findJokerBomb(card_dict)
     if len(joker_bomb) == 1:
@@ -760,23 +762,25 @@ def findAllBombs(card_dict : Dict[str, int], heart_level_card : str) -> List[Lis
     num_heart_level_card = card_dict[heart_level_card]
     bomb_size_upper = 8 + num_heart_level_card
     for s in range(4, bomb_size_upper + 1):
-        bombs = findAllBombsWithSize(card_dict, s, heart_level_card)
+        bombs = findAllBombsWithSize(card_dict, s, heart_level_card, num_heart_level_card)
         allBombs.extend(bombs)
     return allBombs
 
-def findAllBombsWithSize(card_dict : Dict[str, int], size : int, heart_level_card : str) -> List[List[str]]:
+def findAllBombsWithSize(card_dict : Dict[str, int], size : int, heart_level_card : str, num_heart_level_card : int) -> List[List[str]]:
     '''
     This function does not find JOKER Bomb.
     '''
     bombs = list()
-    num_heart_level_card = card_dict[heart_level_card]
     
     for i in range(2, 15):
         raw_cards = extractCardWithCardNum(card_dict, str(i) if i < 10 else NumToCardNum[i])
-        cards = [card for card in raw_cards if card != heart_level_card]
-        if len(cards) < size - num_heart_level_card:
+        cards = []
+        for card in raw_cards:
+            if card != heart_level_card:
+                cards.append(card)
+        if len(cards) == 0 or len(cards) < size - num_heart_level_card:
             continue
-        if len(cards) == size - num_heart_level_card:
+        if len(cards) == size - num_heart_level_card and num_heart_level_card > 0:
             extra = [heart_level_card, heart_level_card]
             if num_heart_level_card == 1:
                 _ = extra.pop()
@@ -1022,7 +1026,10 @@ def canPassOnly(current_action : Optional[List], oppo_actions : List[List], leve
     if current_action is None:
         return False
     filtered_actions = filterActions(oppo_actions, current_action, level)
-    return len(filtered_actions) == 0
+    for action in filtered_actions:
+        if action[0] != 'PASS':
+            return False
+    return True
 
 def canPlayAllInOnce(actions : List[List], num_card : int) -> int:
     index = -1

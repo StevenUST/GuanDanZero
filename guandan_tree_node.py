@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import List, Set, Dict, Optional
+from typing import List, Set, Dict, Optional, Tuple
 
 def dict_to_str(d : Dict) -> str:
     temp = sorted(d)
@@ -107,6 +107,27 @@ class GDNode(BaseNode):
                     p.remove_child_node(self)
             if len(self.parent) == 0:
                 self.parent = None
+    
+    def update_recursively(self) -> int:
+        if self.reward in [1, -1]:
+            return self.reward
+        if self.is_leaf():
+            self.reward = 1 if self.player_index == 1 else -1
+            return self.reward
+        if self.player_index == 0:
+            r = -1000
+            for c in self.children:
+                if isinstance(c, GDNode):
+                    r = max(r, c.update_recursively())
+            self.reward = r
+            return r
+        else:
+            r = 1000
+            for c in self.children:
+                if isinstance(c, GDNode):
+                    r = min(r, c.update_recursively())
+            self.reward = r
+            return r
 
     def __str__(self) -> str:
         answer = f"{self.player_index}, "
@@ -177,7 +198,7 @@ class GDResultNode(BaseNode):
         return f"[Node {self.node_index}, player {self.player_index}, layer {self.layer_num}, reward = {self.reward}]"
     
     def __hash__(self) -> int:
-        return hash(f"[{self.node_index}]")
+        return hash(f"[{self.player_index}, {self.layer_num}]")
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, GDResultNode):

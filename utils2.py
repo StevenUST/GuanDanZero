@@ -3,9 +3,11 @@ from queue import Queue
 
 import tensorflow as tf
 import itertools as it
+import secrets
+import copy
 
 from utils import NumToCardNum, getHeartLevelCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
-    updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce
+    updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce, canPassOnly
 
 from guandan_tree_node import GDNode, GDResultNode
 
@@ -146,6 +148,13 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
         l = node.layer_num
         all_actions = findAllCombs(node.card_dict1, level)
         legal_actions = filterActions(all_actions, node.current_greatest_action, level)
+        if len(legal_actions) == 1 and legal_actions[0][0] == 'PASS':
+            next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
+            n_index += 1
+            node.add_child_node(next_node, None)
+            next_node.add_parent(node)
+            node_queue.put(next_node)
+            continue
         play_all_in_once : int = canPlayAllInOnce(legal_actions, node.card_dict1['total'])
         if play_all_in_once > -1:
             perfect_action = legal_actions[play_all_in_once]
@@ -159,41 +168,57 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
             n_index += 1
             leaf_nodes.append([next_node, node])
         else:
-            can_pass = True
+            index_of_action : int = -1
+            left_dict : Optional[Dict[str, int]] = None
             oppo_actions = findAllCombs(node.card_dict2, level)
-            if len(legal_actions) == 1 and legal_actions[0][0] == 'PASS':
+            for i in range(len(legal_actions)):
+                action = legal_actions[i]
+                if action[0] != 'PASS':
+                    left_dict = updateCardDictAfterAction(node.card_dict1, action)
+                    left_actions = findAllCombs(left_dict, level)
+                    a = canPassOnly(action, oppo_actions, level)
+                    if a and canPlayAllInOnce(left_actions, left_dict['total']) > -1:
+                        index_of_action = i
+                        break
+            if index_of_action > -1:
+                next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict.copy(), l + 1, level, legal_actions[index_of_action].copy())
+                n_index += 1
+                node.add_child_node(next_node, legal_actions[index_of_action])
+                next_node.add_parent(node)
+                node_queue.put(next_node)
+            else:
                 can_pass = True
-            elif node.current_greatest_action is not None and not passIsFine(oppo_actions, node.card_dict2['total']):
-                can_pass = False
-            temp = list()
-            temp2 = list()
-            for a in legal_actions:
-                if a[0] == 'PASS' and can_pass:
-                    next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
-                    n_index += 1
-                    temp.append((next_node, None, False))
-                elif a[0] != 'PASS':
-                    left_dict = updateCardDictAfterAction(node.card_dict1, a)
-                    next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a.copy())
-                    n_index += 1
-                    if left_dict['total'] == 0:
-                        temp2.append(next_node)
-                        temp.append((next_node, a, True))
-                        if node.player_index == 0:
-                            next_node.set_reward(1)
+                if node.current_greatest_action is not None and not passIsFine(oppo_actions, node.card_dict2['total']):
+                    can_pass = False
+                temp = list()
+                temp2 = list()
+                for a in legal_actions:
+                    if a[0] == 'PASS' and can_pass:
+                        next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
+                        n_index += 1
+                        temp.append((next_node, None, False))
+                    elif a[0] != 'PASS':
+                        left_dict = updateCardDictAfterAction(node.card_dict1, a)
+                        next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a.copy())
+                        n_index += 1
+                        if left_dict['total'] == 0:
+                            temp2.append(next_node)
+                            temp.append((next_node, a, True))
+                            if node.player_index == 0:
+                                next_node.set_reward(1)
+                            else:
+                                next_node.set_reward(-1)
                         else:
-                            next_node.set_reward(-1)
-                    else:
-                        temp.append((next_node, a, False))
-            for t in temp:
-                node.add_child_node(t[0], t[1])
-                t[0].add_parent(node)
-                if not t[2]:
-                    node_queue.put(t[0])
-            
-            if len(temp2) > 0:
-                temp2.append(node)
-                leaf_nodes.append(temp2)
+                            temp.append((next_node, a, False))
+                for t in temp:
+                    node.add_child_node(t[0], t[1])
+                    t[0].add_parent(node)
+                    if not t[2]:
+                        node_queue.put(t[0])
+                
+                if len(temp2) > 0:
+                    temp2.append(node)
+                    leaf_nodes.append(temp2)
 
     return top_node, leaf_nodes
 
@@ -209,7 +234,7 @@ def build_result_tree(top_node : GDNode) -> Tuple[GDResultNode, List[List[GDResu
     
     answer = GDResultNode(top_node.player_index, n_index, 0, top_node.reward)
     
-    n_index += 1
+    n_index = 1
     
     queue.put(top_node)
     queue2.put(answer)
@@ -222,7 +247,6 @@ def build_result_tree(top_node : GDNode) -> Tuple[GDResultNode, List[List[GDResu
         temp = list()
         if current_node.children is not None:
             for child in current_node.children:
-                # print(f"node {n_index} reward is {child.reward}")
                 new_node = GDResultNode(child.player_index, n_index, child.layer_num, child.reward)
                 if child.children is None or len(child.children) == 0:
                     temp.append(new_node)
@@ -248,7 +272,6 @@ def update_search_tree(leaf_nodes : List[List[Optional[Union[GDResultNode, GDNod
         temp : List[Union[GDResultNode, GDNode]] = list()
         while len(leaf_nodes) > 0 and leaf_nodes[-1][0].layer_num == layer:
             node_group = leaf_nodes.pop()
-            # print_node_group(node_group)
             parent : Optional[Union[GDResultNode, GDNode]] = node_group[-1]
             if parent is None:
                 top_node = node_group[0]
@@ -267,14 +290,15 @@ def update_search_tree(leaf_nodes : List[List[Optional[Union[GDResultNode, GDNod
                         break
             if can_win:
                 parent.set_reward(1)
-                if isinstance(node_group[0], GDNode):
-                    for i in range(len(node_group) - 1):
-                        if node_group[i].reward == 1:
-                            if parent.best_child_index is None:
-                                parent.best_child_index = list()
-                            parent.best_child_index.append(i)
+                # if isinstance(node_group[0], GDNode):
+                #     for i in range(len(node_group) - 1):
+                #         if node_group[i].reward == 1:
+                #             if parent.best_child_index is None:
+                #                 parent.best_child_index = list()
+                #             parent.best_child_index.append(i)
             else:
                 parent.set_reward(-1)
+            assert parent.reward != -100
             temp.append(parent)
         if top_node is None:
             for p in temp:
@@ -299,8 +323,70 @@ def update_search_tree(leaf_nodes : List[List[Optional[Union[GDResultNode, GDNod
 
     return top_node
 
-def get_progress_from_node(top_node : GDNode) -> List[List]:
-    pass
+def get_progress_from_node(top_node : GDNode) -> List[List[GDNode]]:
+    '''
+    Currently, we assume the reward for the node is 1.
+    '''
+    progress = Queue()
+    queue = Queue()
+    final_progress : List[List[GDNode]] = list()
+    
+    progress.put([top_node])
+    queue.put(top_node)
+    
+    while not queue.empty():
+        current_node : GDNode = queue.get_nowait()
+        current_progress : List[GDNode] = progress.get_nowait()
+        if current_node.player_index == 0:
+            next_node : Optional[GDNode] = None
+            for node in current_node.children:
+                if node.reward == 1:
+                    next_node = node
+                    break
+            if next_node is None:
+                raise ValueError("This node has no child with positive reward!")
+            current_progress.append(next_node)
+            if not next_node.is_leaf():
+                queue.put(next_node)
+                progress.put(current_progress)
+            else:
+                final_progress.append(current_progress)
+        else:
+            temp : List[GDNode] = list()
+            for node in current_node.children:
+                assert next_node.reward == 1
+                temp.append(node)
+            t = 0
+            temp2 = current_progress.copy()
+            for node in temp:
+                if t == 0:
+                    current_progress.append(node)
+                    if not node.is_leaf():
+                        progress.put(current_progress)
+                        queue.put(node)
+                else:
+                    temp3 = temp2.copy()
+                    temp3.append(node)
+                    if not node.is_leaf():
+                        progress.put(temp3)
+                        queue.put(node)
+                t = 1
+    
+    return final_progress
+
+def get_action_from_progress_nodes(progresses : List[List[GDNode]]) -> List[List[Tuple]]:
+    answer = list()
+    
+    for progress in progresses:
+        temp = list()
+        for i in range(len(progress) - 1):
+            node = progress[i]
+            action = node.actions[node.children.index(progress[i + 1])]
+            t : Tuple = (node.player_index, action)
+            temp.append(t)
+        answer.append(temp)
+    
+    return answer
 
 def build_dummy_result_tree() -> Tuple[GDResultNode, List[List[GDResultNode]]]:
     top_node = GDResultNode(0, 0, 0, -100)
@@ -336,12 +422,13 @@ if __name__ == "__main__":
     d1 = getCardDict()
     d2 = getCardDict()
     
-    # hand card1 = [H3, H7]
-    _ = addCardToDict(['H3', 'H3', 'S3', 'HA'], d1)
-    # hand card2 = [H5, D5]
-    _ = addCardToDict(['H7', 'H8', 'H9', 'HA'], d2)
-    
     level = 13
+    
+    # hand card1 = [H3, H7]
+    _ = addCardToDict(['SA', 'SA', 'H3', 'H3'], d1)
+
+    # hand card2 = [H5, D5]
+    _ = addCardToDict(['S7', 'S9', 'H7', 'CJ'], d2)
     
     top_node, leaf_nodes = simulate_two_card_dicts(d1, d2, level)
     
@@ -353,6 +440,16 @@ if __name__ == "__main__":
     
     # result_top_node, leaf_nodes = build_result_tree(top_node)
     
-    top_node2 = update_search_tree(leaf_nodes)
+    # top_node2 = update_search_tree(leaf_nodes)
     
-    print(top_node2.reward)
+    r = top_node.update_recursively()
+    
+    if r == 1:
+        progress = get_progress_from_node(top_node)
+        final_progress = get_action_from_progress_nodes(progress)
+        for p in final_progress:
+            print("==========")
+            print(p)
+            print("*********")
+    else:
+        print("Player0 cannot win Player1")
