@@ -124,4 +124,84 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         )
         return loss
 
-pass
+class GuandanNetForTwo_M2(GuandanNetBase):
+    
+    def __init__(self, model_file = None) -> None:
+        super().__init__()
+        
+        self.action_card_with_suit = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
+        self.joker_bomb_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
+        self.action_wild_card_num = tf.compat.v1.placeholder(tf.float32, shape=[None, 3])
+        self.wild_card_utlization = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        self.hand_card_after_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 56])
+        self.oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
+        self.left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.win_in_one_shot = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
+        self.oppo_left_action = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.oppo_win_in_one_shot = tf.compat.v1.placeholder(tf.float32, shape=[None, 2])
+        
+        self.concatenation_layer = tf.keras.layers.Concatenate()([self.action_card_with_suit, self.joker_bomb_action,
+                                                                  self.action_wild_card_num, self.wild_card_utlization, self.hand_card_after_action,
+                                                                  self.oppo_hand_card, self.left_action, self.oppo_left_action])
+        
+        self.layer1 = tf.keras.layers.Dense(units=512, activation=tf.nn.relu)(self.concatenation_layer)
+        self.layer2 = tf.keras.layers.Dense(units=512, activation=tf.nn.relu)(self.layer1)
+        self.layer3 = tf.keras.layers.Dense(units=256, activation=tf.nn.relu)(self.layer2)
+        self.layer4 = tf.keras.layers.Dense(units=128, activation=tf.nn.relu)(self.layer3)
+        self.layer5 = tf.keras.layers.Dense(units=64, activation=tf.nn.relu)(self.layer4)
+        self.q_value = tf.keras.layers.Dense(units=1)(self.layer5)
+        self.action_prob = tf.keras.layers.Dense(units=1)(self.layer5)
+        
+        self.q_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        self.action_prob_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
+        
+        self.q_loss = tf.losses.mean_squared_error(self.q_value, self.q_label)
+        self.prob_loss = tf.losses.mean_squared_error(self.action_prob, self.action_prob_label)
+        self.loss = self.q_loss + self.prob_loss
+        self.learning_rate = tf.compat.v1.placeholder(tf.float32)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(
+                learning_rate=self.learning_rate).minimize(self.loss)
+        
+        # # Make a session
+        self.session = tf.compat.v1.Session()
+
+        # Initialize variables
+        init = tf.compat.v1.global_variables_initializer()
+        self.session.run(init)
+
+        # # For saving and restoring
+        self.saver = tf.compat.v1.train.Saver()
+        
+        if model_file is not None:
+            self.restore_model(model_file)
+    
+    def get_value_and_prob(self, my_action_data : List, oppo_data : List, left_action : List):
+        q_value, action_prob = self.session.run(
+            [self.q_value, self.action_prob],
+            feed_dict={self.action_card_with_suit : my_action_data[0],
+                       self.joker_bomb_action : my_action_data[1],
+                       self.action_wild_card_num : my_action_data[2],
+                       self.wild_card_utlization : my_action_data[3],
+                       self.hand_card_after_action : my_action_data[4],
+                       self.oppo_hand_card : oppo_data,
+                       self.left_action : left_action[0],
+                       self.oppo_left_action : left_action[1]}
+        )
+        return q_value, action_prob
+    
+    def train_step(self, my_action_data : List, oppo_data : List, left_action : List, q_label : List, prob_label : List):
+        loss, _ = self.session.run(
+            [self.loss, self.optimizer],
+            feed_dict={self.action_card_with_suit : my_action_data[0],
+                       self.joker_bomb_action : my_action_data[1],
+                       self.action_wild_card_num : my_action_data[2],
+                       self.wild_card_utlization : my_action_data[3],
+                       self.hand_card_after_action : my_action_data[4],
+                       self.oppo_hand_card : oppo_data,
+                       self.left_action : left_action[0],
+                       self.oppo_left_action : left_action[1],
+                       self.q_label : q_label,
+                       self.action_prob_label : prob_label,
+                       self.learning_rate : self.lr}
+        )
+        return loss
