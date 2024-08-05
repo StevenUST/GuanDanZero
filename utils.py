@@ -27,15 +27,42 @@ NumToSuit: Final[Dict[int, str]] = {
 }
 
 
-class Cards:
-    def __init__(self, p1_card, p2_card, turn):
+class GDGameStatus:
+    def __init__(self, p1_card : List[str], p2_card : List[str], turn : int, level : int = 13):
         # 初始化每个玩家的手牌列表
         self.player1_hand = p1_card
         self.player2_hand = p2_card
         self.turn = turn
+        self.level = level
+        # ['Type', 'Rank', [cards...]]
+        # ['PASS', 'PASS', 'PASS'] for PASS action
+        self.last_action : Optional[List] = None
 
-    # game_end()
-    # return all possible action
+    def game_end(self) -> int:
+        if len(self.player1_hand) == 0:
+            return 1
+        if len(self.player2_hand) == 0:
+            return -1
+        return 0
+
+    def all_combs(self, player_id : int) -> List[List]:
+        '''
+        If the current level is A, then the return list looks like this:\n
+        [
+            ['Single', 'A', ['SA']],
+            ['Trip', '3', ['S3', 'C3', 'D3']],
+            ['Bomb', '7', ['S7', 'D7', 'D7', 'HA']]
+            ...
+        ]
+        '''
+        if player_id % 2 == 0:
+            td = cardsToDict(self.player1_hand)
+            all_comb = findAllCombs(td, getHeartLevelCard(self.level))
+            return filterActions(all_comb, self.last_action, self.level)
+        else:
+            td = cardsToDict(self.player2_hand)
+            all_comb = findAllCombs(td, getHeartLevelCard(self.level))
+            return filterActions(all_comb, self.last_action, self.level)
 
 
 def inRange(val: int, bound: Tuple[int, int]) -> bool:
