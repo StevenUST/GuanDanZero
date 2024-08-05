@@ -11,6 +11,7 @@ import copy
 
 # from game import Board
 from typing import Callable
+from utils import GDGameStatus
 
 
 def softmax(x):
@@ -185,12 +186,12 @@ class MCTSPlayer(object):
     def reset_player(self):
         self.mcts.update_with_move(-1)
 
-    def get_action(self, cards, temp=1e-3, return_prob=0):
+    def get_action(self, cards : GDGameStatus, temp=1e-3, return_prob=0):
         # cards包括了两个list，一个玩家a的手牌，一个玩家b的手牌
         # the pi vector returned by MCTS as in the alphaGo Zero paper
-        move_probs = np.zeros(len(返回手牌可出牌型的函数))
+        move_probs = np.zeros(len(cards.all_combs(cards.turn)))
         if cards[0] > 0 and cards[1] > 0:
-            acts, probs = self.mcts.get_move_probs(cards, temp) -> 要写一个cards类()
+            acts, probs = self.mcts.get_move_probs(cards, temp) # -> 要写一个cards类()
             move_probs[list(acts)] = probs
             if self._is_selfplay:
                 # add Dirichlet Noise for exploration (needed for

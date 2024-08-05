@@ -425,10 +425,10 @@ if __name__ == "__main__":
     level = 13
     
     # hand card1 = [H3, H7]
-    _ = addCardToDict(['SA', 'SA', 'H3', 'H3'], d1)
+    _ = addCardToDict(['S5', 'S7', 'H4'], d2)
 
     # hand card2 = [H5, D5]
-    _ = addCardToDict(['S7', 'S9', 'H7', 'CJ'], d2)
+    _ = addCardToDict(['S7', 'S9', 'HT'], d1)
     
     top_node, leaf_nodes = simulate_two_card_dicts(d1, d2, level)
     
