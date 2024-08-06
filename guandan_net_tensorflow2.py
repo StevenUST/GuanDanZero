@@ -32,16 +32,16 @@ class GuandanNetForTwo_M1(GuandanNetBase):
     def __init__(self, lr : float = 0.01, model_file=None):
         super().__init__(learning_rate=lr)
         # (Self hand cards. Starts from 2 to A, then SB and HR)
-        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
+        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
         # (The StraightFlush that can be played. From A to T, each slot is ranged from 0 to 4)
-        self.input_my_straight_flush_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 10])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
         # (Number of Wild Card, From 0 to 2)
         self.input_my_other_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 3])
         
         # (Self hand cards. Starts from 2 to A, then SB and HR)
-        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 15])
+        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 54])
         # (The StraightFlush that can be played. From A to T, each slot is ranged from 0 to 4)
-        self.input_oppo_straight_flush_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 10])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
         # (Number of Wild Card, From 0 to 2)
         self.input_oppo_other_states = tf.compat.v1.placeholder(tf.float32, shape=[None, 3])
         
@@ -52,8 +52,8 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         # Level (From 2 to A)
         self.current_level = tf.compat.v1.placeholder(tf.float32, shape=[None, 13])
         
-        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.input_my_straight_flush_flags, self.input_my_other_states,
-                                                         self.input_oppo_hand_card, self.input_oppo_straight_flush_flags, self.input_oppo_other_states,
+        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.input_my_action_flags, self.input_my_other_states,
+                                                         self.input_oppo_hand_card, self.input_oppo_action_flags, self.input_oppo_other_states,
                                                          self.last_move_type, self.last_move_rank, self.current_level
                                                         ])
         
@@ -93,10 +93,10 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         log_act_prob = self.session.run(
             [self.policy_prob],
             feed_dict={self.input_my_hand_card : my_states[0],
-                       self.input_my_straight_flush_flags : my_states[1],
+                       self.input_my_action_flags : my_states[1],
                        self.input_my_other_states : my_states[2],
                        self.input_oppo_hand_card : oppo_states[0],
-                       self.input_oppo_straight_flush_flags : oppo_states[1],
+                       self.input_oppo_action_flags : oppo_states[1],
                        self.input_oppo_other_states : oppo_states[2],
                        self.last_move_type : last_action[0],
                        self.last_move_rank : last_action[1],
@@ -110,10 +110,10 @@ class GuandanNetForTwo_M1(GuandanNetBase):
         loss, _ = self.session.run(
             [self.loss, self.optimizer],
             feed_dict={self.input_my_hand_card : my_states[0],
-                       self.input_my_straight_flush_flags : my_states[1],
+                       self.input_my_action_flags : my_states[1],
                        self.input_my_other_states : my_states[2],
                        self.input_oppo_hand_card : oppo_states[0],
-                       self.input_oppo_straight_flush_flags : oppo_states[1],
+                       self.input_oppo_action_flags : oppo_states[1],
                        self.input_oppo_other_states : oppo_states[2],
                        self.last_move_type : last_action[0],
                        self.last_move_rank : last_action[1],
