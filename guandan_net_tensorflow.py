@@ -40,7 +40,7 @@ class GuandanNetForTwo(GuandanNetBase):
         # ]
         self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 5, 14])
         # (Flag for each action)
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 223])
         # [
             # [S2, S3, S4, ... SA, SB]
             # [H2, H3, H4, ... HA, HR]
@@ -50,7 +50,7 @@ class GuandanNetForTwo(GuandanNetBase):
         # ]
         self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 5, 14])
         # (Flag for each action)
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 223])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])

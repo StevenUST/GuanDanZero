@@ -6,7 +6,7 @@ import itertools as it
 import secrets
 import copy
 
-from utils import NumToCardNum, getHeartLevelCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
+from utils import NumToCardNum, getWildCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
     updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce, canPassOnly
 
 from guandan_tree_node import GDNode, GDResultNode
@@ -80,7 +80,7 @@ def cardDictToListWithMode(card_dict : Dict[str, int], mode : int, level : int) 
         raise ValueError("@param mode must be either 0, 1 or 2.")
 
 def findAll_2_2_comb(level : int = 13) -> List[Tuple[str, str]]:
-    wild_card = getHeartLevelCard(level)
+    wild_card = getWildCard(level)
     card_dict = randomCardDict(108)
     temp = findAllPairs(card_dict, wild_card)
     all_pairs : List[Tuple[str, str]] = list()

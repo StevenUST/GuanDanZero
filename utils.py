@@ -10,12 +10,21 @@ SUITS: Final[List[str]] = ['S', 'H', 'C', 'D']
 POWERS: Final[List[str]] = ['2', '3', '4', '5', '6',
                             '7', '8', '9', 'T', 'J', 'Q', 'K', 'A', 'B', 'R']
 
+TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'ThreeWithTwo' : 3, 
+                                     'TwoTrips' : 4, 'ThreePairs' : 5, 'Straight' : 6, 'StraightFlush' : 7,
+                                     'Bomb' : 8}
+
+TypeNums : Final[List[int]] = [15, 15, 13, 13, 13, 12, 10, 40, 92]
+
+AllTypes : Final[int] = 223
+
 CardNumToNum: Final[Dict[str, int]] = {
     'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
 }
 
 NumToCardNum: Final[Dict[int, str]] = {
-    1: 'A', 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A'
+    1: 'A', 2: '2', 3: '3', 4 : '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
+    10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: 'B', 16: 'R'
 }
 
 SuitToNum: Final[Dict[str, int]] = {
@@ -25,7 +34,6 @@ SuitToNum: Final[Dict[str, int]] = {
 NumToSuit: Final[Dict[int, str]] = {
     0: 'S', 1: 'H', 2: 'C', 3: 'D'
 }
-
 
 class GDGameStatus:
     def __init__(self, p1_card : List[str], p2_card : List[str], turn : int, level : int = 13):
@@ -57,30 +65,43 @@ class GDGameStatus:
         '''
         if player_id % 2 == 0:
             td = cardsToDict(self.player1_hand)
-            all_comb = findAllCombs(td, getHeartLevelCard(self.level))
+            all_comb = findAllCombs(td, getWildCard(self.level))
             return filterActions(all_comb, self.last_action, self.level)
         else:
             td = cardsToDict(self.player2_hand)
-            all_comb = findAllCombs(td, getHeartLevelCard(self.level))
+            all_comb = findAllCombs(td, getWildCard(self.level))
             return filterActions(all_comb, self.last_action, self.level)
 
+class CardComb:
+    
+    def __init__(self, ctype : str, crank : int, cards : Iterable[str]) -> None:
+        self.t = ctype
+        self.rank = crank
+        self.cards = tuple(cards)
+    
+    def __str__(self) -> str:
+        rank = None
+        if self.t in ['ThreePairs', 'TwoTrips', 'Straight', 'StraightFlush']:
+            rank = NumToCardNum[self.rank]
+        else:
+            rank = NumToCardNum[self.rank - 1]
+        
+        return f"['{self.t}', '{rank}', {str(self.cards)}]"
 
 def inRange(val: int, bound: Tuple[int, int]) -> bool:
     return val <= bound[1] and val >= bound[0]
 
-
-def getHeartLevelCard(level: int) -> str:
+def getWildCard(level: int) -> str:
     if level < 1:
         level = 1
     elif level > 13:
         level = 13
-    heart_level_card: str = 'H'
+    wild_card: str = 'H'
     if level < 9:
-        heart_level_card += str(level + 1)
+        wild_card += str(level + 1)
     else:
-        heart_level_card += NumToCardNum[level + 1]
-    return heart_level_card
-
+        wild_card += NumToCardNum[level + 1]
+    return wild_card
 
 def isLargerThanRank(r1: str, r2: str, level: Optional[int]) -> bool:
     '''
@@ -99,7 +120,6 @@ def isLargerThanRank(r1: str, r2: str, level: Optional[int]) -> bool:
             p.insert(12, str(level + 1))
         return p.index(r1) > p.index(r2)
 
-
 def isLegalCard(card: str) -> bool:
     if len(card) != 2:
         return False
@@ -117,7 +137,6 @@ def isLegalCard(card: str) -> bool:
         elif number not in CardNumToNum.keys():
             return False
         return True
-
 
 def addCardToDict(cards: Union[str, List[str]], card_dict: Dict[str, int]) -> bool:
     if isinstance(cards, str):
@@ -145,7 +164,6 @@ def addCardToDict(cards: Union[str, List[str]], card_dict: Dict[str, int]) -> bo
                 all_fine = False
         return all_fine
 
-
 def cardToNum(card: str) -> int:
     if isLegalCard(card):
         if card in ['SB', 'HR']:
@@ -160,7 +178,6 @@ def cardToNum(card: str) -> int:
     else:
         raise ValueError("The input card is illegal!")
 
-
 def numOfCard(card: str) -> int:
     if not isLegalCard(card):
         return -1
@@ -168,6 +185,10 @@ def numOfCard(card: str) -> int:
         return int(card[1])
     return CardNumToNum[card[1]]
 
+def rankToInt(rank : str) -> int:
+    if rank == 'JOKER':
+        return -1
+    return POWERS.index(rank)
 
 def getCardDict(empty: bool = True) -> Dict[str, int]:
     card_dict = dict({})
@@ -185,7 +206,6 @@ def getCardDict(empty: bool = True) -> Dict[str, int]:
     card_dict['total'] = 0 if empty else 108
     return card_dict
 
-
 def cardsToDict(cards: List[str], value_to_remove: Optional[int] = None) -> Dict[str, int]:
     card_dict = getCardDict()
     for card in cards:
@@ -198,7 +218,6 @@ def cardsToDict(cards: List[str], value_to_remove: Optional[int] = None) -> Dict
             if card_dict[key] == value_to_remove:
                 _ = card_dict.pop(key)
     return card_dict
-
 
 def cardDictToList(card_dict: Dict[str, int]) -> List[str]:
     cards = list()
@@ -217,7 +236,6 @@ def cardDictToList(card_dict: Dict[str, int]) -> List[str]:
 
     return cards
 
-
 def isLegalCardDict(card_dict: Dict[str, int]) -> bool:
     keys = list(card_dict.keys())
     try:
@@ -234,13 +252,11 @@ def isLegalCardDict(card_dict: Dict[str, int]) -> bool:
         print("The number of cards does not match the counter value!!!")
         return False
 
-
 def numOfWildCard(card_dict: Dict[str, int], level: int) -> List:
     """
     return the number of wild card in the hand cards.
     """
-    return card_dict[getHeartLevelCard(level)]
-
+    return card_dict[getWildCard(level)]
 
 def randomCardDict(num: int) -> Dict[str, int]:
     if num > 108:
@@ -280,7 +296,6 @@ def randomCardDict(num: int) -> Dict[str, int]:
                 card_dict['total'] -= 1
     return card_dict
 
-
 def generateNRandomCardLists(nums: Tuple) -> List[List[str]]:
     total_num = 0
     for num in nums:
@@ -301,7 +316,6 @@ def generateNRandomCardLists(nums: Tuple) -> List[List[str]]:
 
     return lists
 
-
 def extractCardWithCardNum(card_dict: Dict[str, int], card_num: str) -> List[str]:
     cards = list()
     for suit in SUITS:
@@ -313,14 +327,12 @@ def extractCardWithCardNum(card_dict: Dict[str, int], card_num: str) -> List[str
             cards.append(card)
     return cards
 
-
-def extractCardCombWith_N_HeartLevelCard(card_combs: List[List[str]], heart_level_card: str, num_heart_level_card: int) -> List[List[str]]:
+def extractCardCombWith_N_WildCard(card_combs: List[List[str]], wild_card: str, num_wild_card: int) -> List[List[str]]:
     new_card_combs = list()
     for card_comb in card_combs:
-        if card_comb.count(heart_level_card) == num_heart_level_card:
+        if card_comb.count(wild_card) == num_wild_card:
             new_card_combs.append(card_comb.copy())
     return new_card_combs
-
 
 def separateCardCombByCardNum(card_combs: List[List[str]], power_A_first: bool = False) -> List[List[List]]:
     separated_card_combs = list()
@@ -346,7 +358,6 @@ def separateCardCombByCardNum(card_combs: List[List[str]], power_A_first: bool =
         separated_card_combs.insert(0, list_for_A)
     return separated_card_combs
 
-
 def findAllCombs(card_dict: Dict[str, int], level: int) -> List[List]:
     '''
     @param card_dict:\n
@@ -361,72 +372,78 @@ def findAllCombs(card_dict: Dict[str, int], level: int) -> List[List]:
     if card_dict['total'] == 0:
         return list()
 
-    heart_level_card = getHeartLevelCard(level)
+    wild_card = getWildCard(level)
     all_combs = list()
+    num_card = card_dict['total']
 
     all_singles = findAllSingles(card_dict)
     for single in all_singles:
         new_single = ['Single', single[0][1], single]
         all_combs.append(new_single)
 
-    all_pairs = findAllPairs(card_dict, heart_level_card)
-    for pair in all_pairs:
-        new_pair = ['Pair', pair[0][1], pair]
-        all_combs.append(new_pair)
+    if num_card >= 2:
+        all_pairs = findAllPairs(card_dict, wild_card)
+        for pair in all_pairs:
+            new_pair = ['Pair', pair[0][1], pair]
+            all_combs.append(new_pair)
 
-    all_trips = findAllTrips(
-        card_dict, heart_level_card, all_singles, all_pairs)
-    for trip in all_trips:
-        new_trip = ['Trip', trip[0][1], trip]
-        all_combs.append(new_trip)
+    if num_card >= 3:
+        all_trips = findAllTrips(
+            card_dict, wild_card, all_singles, all_pairs)
+        for trip in all_trips:
+            new_trip = ['Trip', trip[0][1], trip]
+            all_combs.append(new_trip)
+    
+    if num_card >= 5:
+        all_three_with_twos = findAllThreeWithTwos(
+            card_dict, wild_card, all_pairs, all_trips)
+        for three_with_two in all_three_with_twos:
+            new_three_with_two = ['ThreeWithTwo',
+                                three_with_two[0][1], three_with_two]
+            all_combs.append(new_three_with_two)
 
-    all_three_pairs = findAllThreePairs(card_dict, heart_level_card, all_pairs)
-    for three_pair in all_three_pairs:
-        new_three_pair = ['ThreePairs', powerOfThreePairs(
-            three_pair, heart_level_card), three_pair]
-        all_combs.append(new_three_pair)
+    if num_card >= 6:
+        all_three_pairs = findAllThreePairs(card_dict, wild_card, all_pairs)
+        for three_pair in all_three_pairs:
+            new_three_pair = ['ThreePairs', powerOfThreePairs(
+                three_pair, wild_card), three_pair]
+            all_combs.append(new_three_pair)
 
-    all_two_trips = findAllTwoTrips(card_dict, heart_level_card, all_trips)
-    for two_trip in all_two_trips:
-        new_two_trip = ['TwoTrips', two_trip[0][1], two_trip]
-        all_combs.append(new_two_trip)
+        all_two_trips = findAllTwoTrips(card_dict, wild_card, all_trips)
+        for two_trip in all_two_trips:
+            new_two_trip = ['TwoTrips', two_trip[0][1], two_trip]
+            all_combs.append(new_two_trip)
 
-    all_three_with_twos = findAllThreeWithTwos(
-        card_dict, heart_level_card, all_pairs, all_trips)
-    for three_with_two in all_three_with_twos:
-        new_three_with_two = ['ThreeWithTwo',
-                              three_with_two[0][1], three_with_two]
-        all_combs.append(new_three_with_two)
+    if num_card >= 5:
+        straights_and_straight_flushes = findAllStraightAndStraightFlush(
+            card_dict, wild_card)
+        all_straights = list()
+        all_straightFlushes = list()
+        for straight in straights_and_straight_flushes:
+            if isStraightFlush(straight, wild_card)[0]:
+                all_straightFlushes.append(
+                    ['StraightFlush', powerOfStraight(straight, wild_card), straight])
+            else:
+                all_straights.append(['Straight', powerOfStraight(
+                    straight, wild_card), straight])
 
-    straights_and_straight_flushes = findAllStraightAndStraightFlush(
-        card_dict, heart_level_card)
-    all_straights = list()
-    all_straightFlushes = list()
-    for straight in straights_and_straight_flushes:
-        if isStraightFlush(straight, heart_level_card):
-            all_straightFlushes.append(
-                ['StraightFlush', powerOfStraight(straight, heart_level_card), straight])
-        else:
-            all_straights.append(['Straight', powerOfStraight(
-                straight, heart_level_card), straight])
+        all_combs.extend(all_straights)
+        all_combs.extend(all_straightFlushes)
 
-    all_combs.extend(all_straights)
-    all_combs.extend(all_straightFlushes)
+    if num_card >= 4:
+        all_bombs = findAllBombs(card_dict, wild_card)
+        for bomb in all_bombs:
+            new_bomb = ['Bomb', bomb[0][1], bomb]
+            all_combs.append(new_bomb)
 
-    all_bombs = findAllBombs(card_dict, heart_level_card)
-    for bomb in all_bombs:
-        new_bomb = ['Bomb', bomb[0][1], bomb]
-        all_combs.append(new_bomb)
-
-    joker_bomb = findJokerBomb(card_dict)
-    if len(joker_bomb) == 1:
-        new_joker_bomb = ['Bomb', 'JOKER', joker_bomb[0]]
-        all_combs.append(new_joker_bomb)
+        joker_bomb = findJokerBomb(card_dict)
+        if len(joker_bomb) == 1:
+            new_joker_bomb = ['Bomb', 'JOKER', joker_bomb[0]]
+            all_combs.append(new_joker_bomb)
 
     return all_combs
 
-
-def assignTypeAndRankToAction(actions: List[List[str]], heart_level_card: str, action_type: str) -> List[List]:
+def assignTypeAndRankToAction(actions: List[List[str]], wild_card: str, action_type: str) -> List[List]:
     '''
     This function does not check whether the action type is same as @param action_type.
     Please check it carefully before calling this function.\n
@@ -451,10 +468,9 @@ def assignTypeAndRankToAction(actions: List[List[str]], heart_level_card: str, a
         type_func = powerOfThreePairs
     for action in actions:
         rank = action[0][1] if type_func is None else type_func(
-            action, heart_level_card)
+            action, wild_card)
         completed_actions.append([action_type, rank, action.copy()])
     return completed_actions
-
 
 def findAllSingles(card_dict: Dict[str, int]) -> List[List[str]]:
     singles = list()
@@ -472,10 +488,9 @@ def findAllSingles(card_dict: Dict[str, int]) -> List[List[str]]:
 
     return singles
 
-
-def findAllPairs(card_dict: Dict[str, int], heart_level_card: str) -> List[List[str]]:
+def findAllPairs(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     pairs = list()
-    num_heart_level_card = card_dict[heart_level_card]
+    num_wild_card = card_dict[wild_card]
 
     for i in range(2, 15):
         card_num = str(i) if i < 10 else NumToCardNum[i]
@@ -483,11 +498,11 @@ def findAllPairs(card_dict: Dict[str, int], heart_level_card: str) -> List[List[
         pair = list(set(combinations(cards, 2)))
         for p in pair:
             pairs.append(list(p))
-        if heart_level_card[1] != card_num and num_heart_level_card > 0:
+        if wild_card[1] != card_num and num_wild_card > 0:
             for suit in SUITS:
                 card = suit + card_num
                 if card_dict[card] > 0:
-                    pairs.append([card, heart_level_card])
+                    pairs.append([card, wild_card])
     if card_dict['SB'] == 2:
         pairs.append(['SB', 'SB'])
     if card_dict['HR'] == 2:
@@ -495,10 +510,9 @@ def findAllPairs(card_dict: Dict[str, int], heart_level_card: str) -> List[List[
 
     return pairs
 
-
-def findAllTrips(card_dict: Dict[str, int], heart_level_card: str, singles: List[List[str]], pairs: List[List[str]]) -> List[List[str]]:
+def findAllTrips(card_dict: Dict[str, int], wild_card: str, singles: List[List[str]], pairs: List[List[str]]) -> List[List[str]]:
     trips = list()
-    num_heart_level_card = card_dict[heart_level_card]
+    num_wild_card = card_dict[wild_card]
 
     for i in range(2, 15):
         cards = extractCardWithCardNum(
@@ -507,20 +521,19 @@ def findAllTrips(card_dict: Dict[str, int], heart_level_card: str, singles: List
         for t in trip:
             trips.append(list(t))
 
-    if num_heart_level_card >= 1:
+    if num_wild_card >= 1:
         for pair in pairs:
-            if pair.count(heart_level_card) == 0 and pair[0][1] != heart_level_card[1]:
-                trips.append(pair + [heart_level_card])
+            if pair.count(wild_card) == 0 and pair[0][1] != wild_card[1]:
+                trips.append(pair + [wild_card])
 
-    if num_heart_level_card == 2:
+    if num_wild_card == 2:
         for single in singles:
-            if single[0][1] != heart_level_card[1]:
-                trips.append(single + [heart_level_card, heart_level_card])
+            if single[0][1] != wild_card[1]:
+                trips.append(single + [wild_card, wild_card])
 
     return trips
 
-
-def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: List[List[str]]) -> List[List[str]]:
+def findAllThreePairs(card_dict: Dict[str, int], wild_card: str, pairs: List[List[str]]) -> List[List[str]]:
     '''
     0 wild cards:
     - AA2233
@@ -538,12 +551,12 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
     '''
     all_three_pairs = list()
 
-    pairs_with_0_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-        pairs, heart_level_card, 0)
+    pairs_with_0_wild_card = extractCardCombWith_N_WildCard(
+        pairs, wild_card, 0)
     separate_pairs_0_hlc = separateCardCombByCardNum(
-        pairs_with_0_heart_level_card, True)
+        pairs_with_0_wild_card, True)
 
-    pairs_with_1_heart_level_card = None
+    pairs_with_1_wild_card = None
     separate_pairs_1_hlc = None
 
     for i in range(12):
@@ -556,11 +569,11 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
                 threepair = (prod[0].copy() + prod[1].copy()) + prod[2].copy()
                 all_three_pairs.append(threepair)
 
-    if card_dict[heart_level_card] >= 1:
-        pairs_with_1_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            pairs, heart_level_card, 1)
+    if card_dict[wild_card] >= 1:
+        pairs_with_1_wild_card = extractCardCombWith_N_WildCard(
+            pairs, wild_card, 1)
         separate_pairs_1_hlc = separateCardCombByCardNum(
-            pairs_with_1_heart_level_card, True)
+            pairs_with_1_wild_card, True)
         # 1 wild card
         for i in range(14):
             if i > 1:
@@ -594,7 +607,7 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
                                      prod[1].copy()) + prod[2].copy()
                         all_three_pairs.append(threepair)
 
-    if card_dict[heart_level_card] == 2:
+    if card_dict[wild_card] == 2:
         # 2 wild cards (in different pairs)
         for i in range(14):
             if i > 1:
@@ -634,7 +647,7 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
                 t1 = separate_pairs_0_hlc[i - 2].copy()
                 t2 = separate_pairs_0_hlc[i - 1].copy()
                 if not (len(t1) == 0 or len(t2) == 0):
-                    t3 = [[heart_level_card, heart_level_card]]
+                    t3 = [[wild_card, wild_card]]
                     temp = list(product(t1, t2, t3))
                     for prod in temp:
                         threepair = (prod[0].copy() +
@@ -644,7 +657,7 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
                 t1 = separate_pairs_0_hlc[i - 1].copy()
                 t3 = separate_pairs_0_hlc[i + 1].copy()
                 if not (len(t1) == 0 or len(t3) == 0):
-                    t2 = [[heart_level_card, heart_level_card]]
+                    t2 = [[wild_card, wild_card]]
                     temp = list(product(t1, t2, t3))
                     for prod in temp:
                         threepair = (prod[0].copy() +
@@ -654,7 +667,7 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
                 t2 = separate_pairs_0_hlc[i + 1].copy()
                 t3 = separate_pairs_0_hlc[i + 2].copy()
                 if not (len(t2) == 0 or len(t3) == 0):
-                    t1 = [[heart_level_card, heart_level_card]]
+                    t1 = [[wild_card, wild_card]]
                     temp = list(product(t1, t2, t3))
                     for prod in temp:
                         threepair = (prod[0].copy() +
@@ -663,11 +676,10 @@ def findAllThreePairs(card_dict: Dict[str, int], heart_level_card: str, pairs: L
 
     return all_three_pairs
 
-
-def powerOfThreePairs(three_pair: List[str], heart_level_card: str) -> str:
+def powerOfThreePairs(three_pair: List[str], wild_card: str) -> str:
     index = -1
     for index in range(6):
-        if three_pair[index] != heart_level_card:
+        if three_pair[index] != wild_card:
             break
     if index < 2:
         return three_pair[index][1]
@@ -679,8 +691,7 @@ def powerOfThreePairs(three_pair: List[str], heart_level_card: str) -> str:
         else:
             return str(first_num)
 
-
-def findAllTwoTrips(card_dict: Dict[str, int], heart_level_card: str, trips: List[List[str]]) -> List[List[str]]:
+def findAllTwoTrips(card_dict: Dict[str, int], wild_card: str, trips: List[List[str]]) -> List[List[str]]:
     '''
     0 wild cards:
     - AAA222
@@ -694,10 +705,10 @@ def findAllTwoTrips(card_dict: Dict[str, int], heart_level_card: str, trips: Lis
     '''
     all_two_trips = list()
 
-    trips_with_0_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-        trips, heart_level_card, 0)
+    trips_with_0_wild_card = extractCardCombWith_N_WildCard(
+        trips, wild_card, 0)
     separate_trips_0_hlc = separateCardCombByCardNum(
-        trips_with_0_heart_level_card, True)
+        trips_with_0_wild_card, True)
 
     # 0 wild cards
     for i in range(13):
@@ -709,11 +720,11 @@ def findAllTwoTrips(card_dict: Dict[str, int], heart_level_card: str, trips: Lis
                 two_trip = prod[0].copy() + prod[1].copy()
                 all_two_trips.append(two_trip)
 
-    if card_dict[heart_level_card] >= 1:
-        trips_with_1_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            trips, heart_level_card, 1)
+    if card_dict[wild_card] >= 1:
+        trips_with_1_wild_card = extractCardCombWith_N_WildCard(
+            trips, wild_card, 1)
         separate_trips_1_hlc = separateCardCombByCardNum(
-            trips_with_1_heart_level_card, True)
+            trips_with_1_wild_card, True)
         # 1 wild card
         for i in range(14):
             if i < 13:
@@ -733,11 +744,11 @@ def findAllTwoTrips(card_dict: Dict[str, int], heart_level_card: str, trips: Lis
                         two_trip = prod[0].copy() + prod[1].copy()
                         all_two_trips.append(two_trip)
 
-    if card_dict[heart_level_card] == 2:
-        trips_with_2_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            trips, heart_level_card, 2)
+    if card_dict[wild_card] == 2:
+        trips_with_2_wild_card = extractCardCombWith_N_WildCard(
+            trips, wild_card, 2)
         separate_trips_2_hlc = separateCardCombByCardNum(
-            trips_with_2_heart_level_card, True)
+            trips_with_2_wild_card, True)
         # 2 wild cards (in different trips)
         for i in range(13):
             t1 = separate_trips_1_hlc[i].copy()
@@ -769,8 +780,7 @@ def findAllTwoTrips(card_dict: Dict[str, int], heart_level_card: str, trips: Lis
 
     return all_two_trips
 
-
-def findAllThreeWithTwos(card_dict: Dict[str, int], heart_level_card: str, pairs: List[List[str]], trips: List[List[str]]) -> List[List[str]]:
+def findAllThreeWithTwos(card_dict: Dict[str, int], wild_card: str, pairs: List[List[str]], trips: List[List[str]]) -> List[List[str]]:
     '''
     0 wild cards:
     - AAA22
@@ -783,20 +793,20 @@ def findAllThreeWithTwos(card_dict: Dict[str, int], heart_level_card: str, pairs
     '''
     all_three_with_twos = list()
 
-    pairs_with_0_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-        pairs, heart_level_card, 0)
+    pairs_with_0_wild_card = extractCardCombWith_N_WildCard(
+        pairs, wild_card, 0)
     separate_pairs_0_hlc = separateCardCombByCardNum(
-        pairs_with_0_heart_level_card)
-    pairs_with_1_heart_level_card = None
+        pairs_with_0_wild_card)
+    pairs_with_1_wild_card = None
     separate_pairs_1_hlc = None
 
-    trips_with_0_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-        trips, heart_level_card, 0)
+    trips_with_0_wild_card = extractCardCombWith_N_WildCard(
+        trips, wild_card, 0)
     separate_trips_0_hlc = separateCardCombByCardNum(
-        trips_with_0_heart_level_card)
-    trips_with_1_heart_level_card = None
+        trips_with_0_wild_card)
+    trips_with_1_wild_card = None
     separate_trips_1_hlc = None
-    trips_with_2_heart_level_card = None
+    trips_with_2_wild_card = None
     separate_trips_2_hlc = None
 
     # 0 wild cards:
@@ -810,15 +820,15 @@ def findAllThreeWithTwos(card_dict: Dict[str, int], heart_level_card: str, pairs
                     three_with_two = prod[0].copy() + prod[1].copy()
                     all_three_with_twos.append(three_with_two)
 
-    if card_dict[heart_level_card] >= 1:
-        pairs_with_1_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            pairs, heart_level_card, 1)
+    if card_dict[wild_card] >= 1:
+        pairs_with_1_wild_card = extractCardCombWith_N_WildCard(
+            pairs, wild_card, 1)
         separate_pairs_1_hlc = separateCardCombByCardNum(
-            pairs_with_1_heart_level_card)
-        trips_with_1_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            trips, heart_level_card, 1)
+            pairs_with_1_wild_card)
+        trips_with_1_wild_card = extractCardCombWith_N_WildCard(
+            trips, wild_card, 1)
         separate_trips_1_hlc = separateCardCombByCardNum(
-            trips_with_1_heart_level_card)
+            trips_with_1_wild_card)
         # 1 wild cards:
         for i in range(0, 13):
             for j in range(0, 13):
@@ -836,11 +846,11 @@ def findAllThreeWithTwos(card_dict: Dict[str, int], heart_level_card: str, pairs
                         three_with_two = prod[0].copy() + prod[1].copy()
                         all_three_with_twos.append(three_with_two)
 
-    if card_dict[heart_level_card] == 2:
-        trips_with_2_heart_level_card = extractCardCombWith_N_HeartLevelCard(
-            trips, heart_level_card, 2)
+    if card_dict[wild_card] == 2:
+        trips_with_2_wild_card = extractCardCombWith_N_WildCard(
+            trips, wild_card, 2)
         separate_trips_2_hlc = separateCardCombByCardNum(
-            trips_with_2_heart_level_card)
+            trips_with_2_wild_card)
         # 2 wild cards:
         for i in range(0, 13):
             for j in range(0, 13):
@@ -860,19 +870,17 @@ def findAllThreeWithTwos(card_dict: Dict[str, int], heart_level_card: str, pairs
 
     return all_three_with_twos
 
-
-def findAllBombs(card_dict: Dict[str, int], heart_level_card: str) -> List[List[str]]:
+def findAllBombs(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     allBombs = list()
-    num_heart_level_card = card_dict[heart_level_card]
-    bomb_size_upper = 8 + num_heart_level_card
+    num_wild_card = card_dict[wild_card]
+    bomb_size_upper = 8 + num_wild_card
     for s in range(4, bomb_size_upper + 1):
         bombs = findAllBombsWithSize(
-            card_dict, s, heart_level_card, num_heart_level_card)
+            card_dict, s, wild_card, num_wild_card)
         allBombs.extend(bombs)
     return allBombs
 
-
-def findAllBombsWithSize(card_dict: Dict[str, int], size: int, heart_level_card: str, num_heart_level_card: int) -> List[List[str]]:
+def findAllBombsWithSize(card_dict: Dict[str, int], size: int, wild_card: str, num_wild_card: int) -> List[List[str]]:
     '''
     This function does not find JOKER Bomb.
     '''
@@ -883,13 +891,13 @@ def findAllBombsWithSize(card_dict: Dict[str, int], size: int, heart_level_card:
             card_dict, str(i) if i < 10 else NumToCardNum[i])
         cards = []
         for card in raw_cards:
-            if card != heart_level_card:
+            if card != wild_card:
                 cards.append(card)
-        if len(cards) == 0 or len(cards) < size - num_heart_level_card:
+        if len(cards) == 0 or len(cards) < size - num_wild_card:
             continue
-        if len(cards) == size - num_heart_level_card and num_heart_level_card > 0:
-            extra = [heart_level_card, heart_level_card]
-            if num_heart_level_card == 1:
+        if len(cards) == size - num_wild_card and num_wild_card > 0:
+            extra = [wild_card, wild_card]
+            if num_wild_card == 1:
                 _ = extra.pop()
                 assert len(extra) == 1
             bombs.append((cards + extra).copy())
@@ -897,18 +905,17 @@ def findAllBombsWithSize(card_dict: Dict[str, int], size: int, heart_level_card:
             temp = list(combinations(cards, size))
             for b in temp:
                 bombs.append(list(b))
-            if num_heart_level_card >= 1:
+            if num_wild_card >= 1:
                 temp2 = list(combinations(cards, size - 1))
                 for b2 in temp2:
-                    bombs.append(list(b2) + [heart_level_card])
-            if num_heart_level_card >= 2:
+                    bombs.append(list(b2) + [wild_card])
+            if num_wild_card >= 2:
                 temp3 = list(combinations(cards, size - 2))
                 for b3 in temp3:
                     bombs.append(
-                        list(b3) + [heart_level_card, heart_level_card])
+                        list(b3) + [wild_card, wild_card])
 
     return bombs
-
 
 def findJokerBomb(card_dict: Dict[str, int]) -> List[List[str]]:
     answer = list()
@@ -918,106 +925,111 @@ def findJokerBomb(card_dict: Dict[str, int]) -> List[List[str]]:
 
     return answer
 
-
-def findAllStraightAndStraightFlush(card_dict: Dict[str, int], heart_level_card: str) -> List[List[str]]:
+def findAllStraightAndStraightFlush(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     allStraight = list()
-    num_heart_level = card_dict[heart_level_card]
+    num_heart_level = card_dict[wild_card]
     for i in range(1, 11):
         straights = findAllStraightFrom(
-            card_dict, heart_level_card, i, 4, num_heart_level)
+            card_dict, wild_card, i, 4, num_heart_level)
         if len(straights) > 0:
             for straight in straights:
                 allStraight.append(list(straight))
     return allStraight
 
-
-def findAllStraight(card_dict: Dict[str, int], heart_level_card: str) -> List[List[str]]:
+def findAllStraight(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     all_straightflush = list()
-    straights = findAllStraightAndStraightFlush(card_dict, heart_level_card)
+    straights = findAllStraightAndStraightFlush(card_dict, wild_card)
     for s in straights:
-        if not isStraightFlush(s):
+        if not isStraightFlush(s)[0]:
             all_straightflush.append(s)
     return all_straightflush
 
-
-def findAllStraightFlush(card_dict: Dict[str, int], heart_level_card: str) -> List[List[str]]:
+def findAllStraightFlush(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     all_straightflush = list()
-    straights = findAllStraightAndStraightFlush(card_dict, heart_level_card)
+    straights = findAllStraightAndStraightFlush(card_dict, wild_card)
     for s in straights:
-        if isStraightFlush(s):
+        if isStraightFlush(s)[0]:
             all_straightflush.append(s)
     return all_straightflush
 
-
-def findAllStraightFrom(card_dict: Dict[str, int], heart_level_card: str, current: int, remain: int, num_heart_level_card: int) -> List[List[str]]:
+def findAllStraightFrom(card_dict: Dict[str, int], wild_card: str, current: int, remain: int, num_wild_card: int) -> List[List[str]]:
     card_num = NumToCardNum[current] if current == 1 or current >= 10 else str(
         current)
     answer = list()
-    use_heart_level_card = False
+    use_wild_card = False
     for suit in SUITS:
         card = suit + card_num
         if card_dict[card] > 0:
             if remain == 0:
-                if card == heart_level_card and num_heart_level_card > 0:
-                    use_heart_level_card = True
+                if card == wild_card and num_wild_card > 0:
+                    use_wild_card = True
                     answer.append([card])
-                elif card != heart_level_card:
+                elif card != wild_card:
                     answer.append([card])
             else:
                 next_straight = list()
-                if card == heart_level_card and num_heart_level_card > 0:
-                    use_heart_level_card = True
+                if card == wild_card and num_wild_card > 0:
+                    use_wild_card = True
                     next_straight = findAllStraightFrom(
-                        card_dict, heart_level_card, current + 1, remain - 1, num_heart_level_card - 1)
-                elif card != heart_level_card:
+                        card_dict, wild_card, current + 1, remain - 1, num_wild_card - 1)
+                elif card != wild_card:
                     next_straight = findAllStraightFrom(
-                        card_dict, heart_level_card, current + 1, remain - 1, num_heart_level_card)
+                        card_dict, wild_card, current + 1, remain - 1, num_wild_card)
                 if len(next_straight) > 0:
                     for data in next_straight:
                         t = [card] + list(data)
                         answer.append(t)
-    if not use_heart_level_card and num_heart_level_card > 0:
+    if not use_wild_card and num_wild_card > 0:
         if remain == 0:
-            answer.append([heart_level_card])
+            answer.append([wild_card])
         else:
             next_straight = findAllStraightFrom(
-                card_dict, heart_level_card, current + 1, remain - 1, num_heart_level_card - 1)
+                card_dict, wild_card, current + 1, remain - 1, num_wild_card - 1)
             if len(next_straight) > 0:
                 for data in next_straight:
-                    t = [heart_level_card] + list(data)
+                    t = [wild_card] + list(data)
                     answer.append(t)
     return answer
 
-
-def isStraightFlush(cardComb: List[str], heart_level_card: str) -> bool:
+def isStraightFlush(cardComb: List[str], wild_card: str) -> Tuple[bool, Optional[str]]:
     '''
     @param cardComb
     This is the Straight Combination that we are going to test.
     We assume it is a legal Straight Combination.
     '''
     if len(cardComb) != 5:
-        return False
+        return (False, None)
     suit = 'None'
     for card in cardComb:
-        if card != heart_level_card:
+        if card != wild_card:
             if suit not in SUITS:
                 suit = card[0]
             elif suit in SUITS and card[0] != suit:
-                return False
-    return True
+                return (False, None)
+    return (True, suit)
 
-
-def powerOfStraight(straight: List[str], heart_level_card: str) -> int:
+def powerOfStraight(straight: List[str], wild_card: str) -> int:
     p = 'None'
     num = -1
     for i in range(3):
-        if straight[i] != heart_level_card:
+        if straight[i] != wild_card:
             num = CardNumToNum[straight[i][1]] % 13 if not straight[i][1].isnumeric(
             ) else int(straight[i][1])
             num -= i
     p = NumToCardNum[num] if num == 1 or num == 10 else str(num)
     return p
 
+def suitOfStraightFlush(straight_flush : List[str], wild_card : str) -> str:
+    suit = None
+    for card in straight_flush:
+        if card == wild_card:
+            continue
+        else:
+            suit = card[0]
+            break
+    if suit == None:
+        raise ValueError("The @param straight_flush is invalid!")
+    return suit
 
 def updateCardDictAfterAction(card_dict: Dict[str, int], action: Optional[List]) -> Dict[str, int]:
     if action == None:
@@ -1030,7 +1042,6 @@ def updateCardDictAfterAction(card_dict: Dict[str, int], action: Optional[List])
 
     return answer
 
-
 def updateCardCombsAfterAction(card_combs: List[List], card_dict: Dict[str, int], action: Optional[List]) -> Tuple[bool, List[List]]:
     if action == None:
         return True, card_combs.copy()
@@ -1042,7 +1053,7 @@ def updateCardCombsAfterAction(card_combs: List[List], card_dict: Dict[str, int]
             contain_action = True
 
     if not contain_action:
-        return False, card_combs.copy()
+        return (False, card_combs.copy())
 
     action_dict = cardsToDict(action[2], 0)
     _ = action_dict.pop('total')
@@ -1069,7 +1080,6 @@ def updateCardCombsAfterAction(card_combs: List[List], card_dict: Dict[str, int]
 
     return True, new_combs
 
-
 def isSameAction(action1: Optional[List], action2: Optional[List]) -> bool:
     if action1 == None or action2 == None:
         return action1 == None and action2 == None
@@ -1083,7 +1093,6 @@ def isSameAction(action1: Optional[List], action2: Optional[List]) -> bool:
         if action1[2][i] != action2[2][i]:
             return False
     return True
-
 
 def filterActions(actions: List[List], base_action: Optional[List], level: int) -> List[List]:
     if base_action == None:
@@ -1137,7 +1146,6 @@ def filterActions(actions: List[List], base_action: Optional[List], level: int) 
                         final_actions.append(action.copy())
         return final_actions
 
-
 def passIsFine(oppo_actions: List[List], oppo_card_num: int) -> bool:
     '''
     This function returns true if opponent cannot play all the card(s) in one time;\n
@@ -1148,7 +1156,6 @@ def passIsFine(oppo_actions: List[List], oppo_card_num: int) -> bool:
             return False
     return True
 
-
 def canPassOnly(current_action: Optional[List], oppo_actions: List[List], level: int) -> bool:
     if current_action is None:
         return False
@@ -1158,7 +1165,6 @@ def canPassOnly(current_action: Optional[List], oppo_actions: List[List], level:
             return False
     return True
 
-
 def canPlayAllInOnce(actions: List[List], num_card: int) -> int:
     index = -1
     for i in range(len(actions) - 1, -1, -1):
@@ -1167,6 +1173,45 @@ def canPlayAllInOnce(actions: List[List], num_card: int) -> int:
             break
     return index
 
+def getFlagsForActions(all_combs : List[List], wild_card : str) -> List[List[int]]:
+    
+    def init_flags(flags : List) -> None:
+        for i in TypeNums:
+            flags.append([0] * i)
+    
+    flags = []
+    init_flags(flags)
+    rank = 0
+    size = 0
+    suit = 0
+    
+    for comb in all_combs:
+        type_index = TypeIndex[comb[0]]
+        if type_index == 8:
+            if comb[1] == 'JOKER':
+                flags[type_index][-1] = 1
+            else:
+                rank = rankToInt(comb[1])
+                size = len(comb[2])
+                flags[type_index][(size - 4) * 13 + rank] = 1
+        if type_index <= 7 and type_index >= 4:
+            if comb[1] == 'A':
+                rank = 0
+            else:
+                rank = rankToInt(comb[1]) + 1
+            if type_index == 7:
+                suit = SUITS.index(suitOfStraightFlush(comb[2], wild_card))
+                flags[type_index][suit * 10 + rank] = 1
+            else:
+                flags[type_index][rank] = 1
+        else:
+            rank = rankToInt(comb[1])
+            flags[type_index][rank] = 1
+
+    return flags
+
+def scoreOfTheCards(card_dict : Dict[str, int], all_combs : List[List], wild_card : str) -> float:
+    pass
 
 if __name__ == "__main__":
     card_lists = generateNRandomCardLists((12, ))
