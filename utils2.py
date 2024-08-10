@@ -148,7 +148,7 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
         l = node.layer_num
         all_actions = findAllCombs(node.card_dict1, level)
         legal_actions = filterActions(all_actions, node.current_greatest_action, level)
-        if len(legal_actions) == 1 and legal_actions[0][0] == 'PASS':
+        if len(legal_actions) == 1 and legal_actions[0].is_pass():
             next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
             n_index += 1
             node.add_child_node(next_node, None)
@@ -158,12 +158,12 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
         play_all_in_once : int = canPlayAllInOnce(legal_actions, node.card_dict1['total'])
         if play_all_in_once > -1:
             perfect_action = legal_actions[play_all_in_once]
-            next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), getCardDict(), l + 1, level, perfect_action.copy())
+            next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), getCardDict(), l + 1, level, perfect_action)
             if index == 0:
                 next_node.set_reward(1)
             else:
                 next_node.set_reward(-1)
-            node.add_child_node(next_node, perfect_action.copy())
+            node.add_child_node(next_node, perfect_action)
             next_node.add_parent(node)
             n_index += 1
             leaf_nodes.append([next_node, node])
@@ -173,7 +173,7 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
             oppo_actions = findAllCombs(node.card_dict2, level)
             for i in range(len(legal_actions)):
                 action = legal_actions[i]
-                if action[0] != 'PASS':
+                if not action.is_pass():
                     left_dict = updateCardDictAfterAction(node.card_dict1, action)
                     left_actions = findAllCombs(left_dict, level)
                     a = canPassOnly(action, oppo_actions, level)
@@ -181,7 +181,7 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
                         index_of_action = i
                         break
             if index_of_action > -1:
-                next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict.copy(), l + 1, level, legal_actions[index_of_action].copy())
+                next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict.copy(), l + 1, level, legal_actions[index_of_action])
                 n_index += 1
                 node.add_child_node(next_node, legal_actions[index_of_action])
                 next_node.add_parent(node)
@@ -193,13 +193,13 @@ def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : 
                 temp = list()
                 temp2 = list()
                 for a in legal_actions:
-                    if a[0] == 'PASS' and can_pass:
+                    if a.is_pass() and can_pass:
                         next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), node.card_dict1.copy(), l + 1, level, None)
                         n_index += 1
                         temp.append((next_node, None, False))
-                    elif a[0] != 'PASS':
+                    elif not a.is_pass():
                         left_dict = updateCardDictAfterAction(node.card_dict1, a)
-                        next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a.copy())
+                        next_node = GDNode((index + 1) % 2, n_index, node.card_dict2.copy(), left_dict, l + 1, level, a)
                         n_index += 1
                         if left_dict['total'] == 0:
                             temp2.append(next_node)

@@ -11,7 +11,7 @@ import copy
 
 # from game import Board
 from typing import Callable
-from utils import GDGameStatus
+from guandan_game import GDGameStatus
 
 
 def softmax(x):
@@ -189,7 +189,7 @@ class MCTSPlayer(object):
     def get_action(self, cards : GDGameStatus, temp=1e-3, return_prob=0):
         # cards包括了两个list，一个玩家a的手牌，一个玩家b的手牌
         # the pi vector returned by MCTS as in the alphaGo Zero paper
-        move_probs = np.zeros(len(cards.all_combs(cards.turn)))
+        move_probs = np.zeros(224)
         if cards[0] > 0 and cards[1] > 0:
             acts, probs = self.mcts.get_move_probs(cards, temp) # -> 要写一个cards类()
             move_probs[list(acts)] = probs

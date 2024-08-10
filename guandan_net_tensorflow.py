@@ -32,25 +32,65 @@ class GuandanNetForTwo(GuandanNetBase):
     def __init__(self, lr : float = 0.01, model_file=None):
         super().__init__(learning_rate=lr)
         # [
-            # [S2, S3, S4, ... SA, SB]
-            # [H2, H3, H4, ... HA, HR]
-            # [C2, C3, C4, ... CA, WC]
-            # [D2, D3, D4, ... DA, ALL]
-            # [#2, #3, #4, ... #A, SCORE]
+            # S2, S3, S4, ... SA, 
+            # H2, H3, H4, ... HA,
+            # C2, C3, C4, ... CA,
+            # D2, D3, D4, ... DA,
+            # SB, HR,
+            # #2, #3, #4, ... #A,
+            # #WC, #ALL, #STAGE
         # ]
-        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 5, 14])
+        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
         # (Flag for each action)
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 223])
+        # (Remark: '-' implies always 0 because such action does not exist)
         # [
-            # [S2, S3, S4, ... SA, SB]
-            # [H2, H3, H4, ... HA, HR]
-            # [C2, C3, C4, ... CA, WC]
-            # [D2, D3, D4, ... DA, ALL]
-            # [#2, #3, #4, ... #A, SCORE]
+            # Single        [2, 3, 4, ... A, B, R]
+            # Pair          [2, 3, 4, ... A, B, R]
+            # Trip          [2, 3, 4, ... A, -, -]
+            # 3+2           [2, 3, 4, ... A, -, -]
+            # TwoTrips      [A, 2, 3, ... K, -, -]
+            # ThreePairs    [A, 2, 3, ... Q, -, -, -]
+            # Straight      [A, 2, 3, ... T, -, -, -, -, -]
+            # Bomb(4)       [2, 3, 4, ... A, -, -]
+            # Bomb(5)       [2, 3, 4, ... A, -, -]
+            # SF            [A, 2, 3, ... T, -, -, -, -, -]
+            # Bomb(6)       [2, 3, 4, ... A, -, -]
+            # ...
+            # Bomb(9)       [2, 3, 4, ... A, -, -]
+            # Bomb(10)      [2, 3, 4, ... A, -, -]
+            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [1, 1, 1, ..., 1] with length of 15. Else it is all zero)
         # ]
-        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 5, 14])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 15, 15])
+        # [
+            # S2, S3, S4, ... SA, 
+            # H2, H3, H4, ... HA,
+            # C2, C3, C4, ... CA,
+            # D2, D3, D4, ... DA,
+            # SB, HR,
+            # #2, #3, #4, ... #A,
+            # #WC, #ALL, #STAGE
+        # ]
+        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
         # (Flag for each action)
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 223])
+        # (Remark: '-' implies always 0 because such action does not exist)
+        # [
+            # Single        [2, 3, 4, ... A, B, R]
+            # Pair          [2, 3, 4, ... A, B, R]
+            # Trip          [2, 3, 4, ... A, -, -]
+            # 3+2           [2, 3, 4, ... A, -, -]
+            # TwoTrips      [A, 2, 3, ... K, -, -]
+            # ThreePairs    [A, 2, 3, ... Q, -, -, -]
+            # Straight      [A, 2, 3, ... T, -, -, -, -, -]
+            # Bomb(4)       [2, 3, 4, ... A, -, -]
+            # Bomb(5)       [2, 3, 4, ... A, -, -]
+            # SF            [A, 2, 3, ... T, -, -, -, -, -]
+            # Bomb(6)       [2, 3, 4, ... A, -, -]
+            # ...
+            # Bomb(9)       [2, 3, 4, ... A, -, -]
+            # Bomb(10)      [2, 3, 4, ... A, -, -]
+            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [1, 1, 1, ..., 1] with length of 15. Else it is all zero)
+        # ]
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 15, 15])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])
@@ -59,16 +99,32 @@ class GuandanNetForTwo(GuandanNetBase):
         # Level (From 2 to A)
         self.current_level = tf.compat.v1.placeholder(tf.float32, shape=[None, 13])
         
-        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.input_my_action_flags,
-                                                         self.input_oppo_hand_card, self.input_oppo_action_flags,
+        self.my_conv_layer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.input_my_action_flags)
+        self.my_max_pool_layer1 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer1)
+        self.my_conv_layer2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.my_max_pool_layer1)
+        self.my_max_pool_layer2 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer2)
+        self.my_conv_layer3 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.my_conv_layer2)
+        self.my_max_pool_layer3 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer3)
+        self.my_flatten_layer = tf.keras.layers.Flatten()(self.my_max_pool_layer3)
+        
+        self.oppo_conv_layer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.input_oppo_action_flags)
+        self.oppo_max_pool_layer1 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer1)
+        self.oppo_conv_layer2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.oppo_max_pool_layer1)
+        self.oppo_max_pool_layer2 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer2)
+        self.oppo_conv_layer3 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.oppo_conv_layer2)
+        self.oppo_max_pool_layer3 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer3)
+        self.oppo_flatten_layer = tf.keras.layers.Flatten()(self.oppo_max_pool_layer3)
+        
+        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.my_flatten_layer,
+                                                         self.input_oppo_hand_card, self.oppo_flatten_layer,
                                                          self.last_move_type, self.last_move_rank, self.current_level
                                                         ])
         
         self.layer2 = tf.keras.layers.Dense(units=512, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer1)
         self.layer3 = tf.keras.layers.Dense(units=512, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer2)
-        self.layer4 = tf.keras.layers.Dense(units=512, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer3)
+        self.layer4 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer3)
         self.layer5 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer4)
-        self.layer6 = tf.keras.layers.Dense(units=128, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer5)
+        self.layer6 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer5)
         
         self.policy_prob = tf.keras.layers.Dense(units=194)(self.layer6)
         self.q_value = tf.keras.layers.Dense(units=1)(self.layer6)
