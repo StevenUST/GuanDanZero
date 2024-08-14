@@ -3,6 +3,8 @@ import tensorflow as tf
 from typing import List, Tuple, Optional
 from numpy import ndarray as nplist
 
+from guandan_game import Cards as CurrentStatus
+
 tf.compat.v1.disable_eager_execution()
 
 class GuandanNetBase():
@@ -151,6 +153,9 @@ class GuandanNetForTwo(GuandanNetBase):
         self.saver = tf.compat.v1.train.Saver()
         if model_file is not None:
             self.restore_model(model_file)
+    
+    def policy_value_function(self, my_states : List, oppo_states : List, last_action : List, level : List) -> nplist:
+        return self.get_prob(my_states, oppo_states, last_action, level)
     
     def get_prob(self, my_states : List, oppo_states : List, last_action : List, level : List) -> nplist:
         log_act_prob = self.session.run(

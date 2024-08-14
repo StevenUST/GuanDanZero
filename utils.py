@@ -3,7 +3,7 @@ from time import time
 from itertools import combinations, product
 from numpy import random
 
-from cardcomb import CardComb
+from cardcomb import CardComb, CombBase, isLargerThanRank
 
 import copy
 
@@ -53,20 +53,6 @@ def getWildCard(level: int) -> str:
     else:
         wild_card += NumToCardNum[level + 1]
     return wild_card
-
-def isLargerThanRank(r1: int, r2: int, level: Optional[int]) -> bool:
-    '''
-    return @param r1 > @param r2 base on @param level
-    '''
-    if level is None or r1 == 0 or r2 == 0:
-        return r1 > r2
-    else:
-        t = [i for i in range(1, 14)]
-        if level != 13:
-            _ = t.pop(level - 1)
-            t.insert(12, level)
-        t.extend([14, 15, 16])
-        return t.index(r1) > t.index(r2)
 
 def isLegalCard(card: str) -> bool:
     if len(card) != 2:
@@ -199,12 +185,6 @@ def isLegalCardDict(card_dict: Dict[str, int]) -> bool:
     else:
         print("The number of cards does not match the counter value!!!")
         return False
-
-def numOfWildCard(card_dict: Dict[str, int], level: int) -> List:
-    """
-    return the number of wild card in the hand cards.
-    """
-    return card_dict[getWildCard(level)]
 
 def randomCardDict(num: int) -> Dict[str, int]:
     if num > 108:
@@ -362,21 +342,20 @@ def findAllCombs(card_dict: Dict[str, int], level: int) -> List[CardComb]:
             all_combs.append(new_two_trip)
 
     if num_card >= 5:
-        straights_and_straight_flushes = findAllStraightAndStraightFlush(
-            card_dict, wild_card)
+        straights_and_straight_flushes = findAllStraightAndStraightFlush(card_dict, wild_card)
         all_straights = list()
         all_straightFlushes = list()
-        for straight in straights_and_straight_flushes:
-            if isStraightFlush(straight, wild_card)[0]:
-                power = powerOfStraight(straight, wild_card)
-                rank = 1 if power == 'A' else numOfCard(f"S{power}")
-                all_straightFlushes.append(CardComb('StraightFlush', rank, straight))
-            else:
-                power = powerOfStraight(straight, wild_card)
-                rank = 1 if power == 'A' else numOfCard(f"S{power}")
-                all_straights.append(CardComb('Straight', rank, straight))
 
+        for straight in straights_and_straight_flushes[0]:
+            power = powerOfStraight(straight, wild_card)
+            rank = 1 if power == 'A' else numOfCard(f"S{power}")
+            all_straights.append(CardComb('Straight', rank, straight))
         all_combs.extend(all_straights)
+        
+        for straight in straights_and_straight_flushes[1]:
+            power = powerOfStraight(straight, wild_card)
+            rank = 1 if power == 'A' else numOfCard(f"S{power}")
+            all_straightFlushes.append(CardComb('StraightFlush', rank, straight))
         all_combs.extend(all_straightFlushes)
 
     if num_card >= 4:
@@ -854,7 +833,15 @@ def findJokerBomb(card_dict: Dict[str, int]) -> List[List[str]]:
 
     return answer
 
-def findAllStraightAndStraightFlush(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
+def findAllStraightAndStraightFlush(card_dict: Dict[str, int], wild_card: str) -> List[List[List[str]]]:
+    answer = list()
+    temp = findAllStraights(card_dict, wild_card)
+    temp2 = findAllStraightFlushes(card_dict, wild_card)
+    answer.append(temp)
+    answer.append(temp2)
+    return answer
+
+def findAllStraights(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
     allStraight = list()
     num_heart_level = card_dict[wild_card]
     for i in range(1, 11):
@@ -862,24 +849,21 @@ def findAllStraightAndStraightFlush(card_dict: Dict[str, int], wild_card: str) -
             card_dict, wild_card, i, 4, num_heart_level)
         if len(straights) > 0:
             for straight in straights:
-                allStraight.append(list(straight))
+                if not isStraightFlush(straight, wild_card)[0]:
+                    allStraight.append(list(straight))
     return allStraight
 
-def findAllStraight(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
-    all_straightflush = list()
-    straights = findAllStraightAndStraightFlush(card_dict, wild_card)
-    for s in straights:
-        if not isStraightFlush(s)[0]:
-            all_straightflush.append(s)
-    return all_straightflush
-
-def findAllStraightFlush(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
-    all_straightflush = list()
-    straights = findAllStraightAndStraightFlush(card_dict, wild_card)
-    for s in straights:
-        if isStraightFlush(s)[0]:
-            all_straightflush.append(s)
-    return all_straightflush
+def findAllStraightFlushes(card_dict: Dict[str, int], wild_card: str) -> List[List[str]]:
+    allStraightFlush = list()
+    num_heart_level = card_dict[wild_card]
+    for i in range(1, 11):
+        for suit in SUITS:
+            straights = findAllStraightFlushFrom(
+                card_dict, suit, wild_card, i, 4, num_heart_level)
+            if len(straights) > 0:
+                for straight in straights:
+                    allStraightFlush.append(list(straight))
+    return allStraightFlush
 
 def findAllStraightFrom(card_dict: Dict[str, int], wild_card: str, current: int, remain: int, num_wild_card: int) -> List[List[str]]:
     card_num = NumToCardNum[current] if current == 1 or current >= 10 else str(
@@ -920,6 +904,43 @@ def findAllStraightFrom(card_dict: Dict[str, int], wild_card: str, current: int,
                     answer.append(t)
     return answer
 
+def findAllStraightFlushFrom(card_dict: Dict[str, int], suit : str, wild_card: str, current: int, remain: int, num_wild_card: int) -> List[List[str]]:
+    card_num = NumToCardNum[current] if current == 1 or current >= 10 else str(current)
+    answer = list()
+    use_wild_card = False
+    card = suit + card_num
+    if card_dict[card] > 0:
+        if remain == 0:
+            if card == wild_card and num_wild_card > 0:
+                use_wild_card = True
+                answer.append([card])
+            elif card != wild_card:
+                answer.append([card])
+        else:
+            next_straight = list()
+            if card == wild_card and num_wild_card > 0:
+                use_wild_card = True
+                next_straight = findAllStraightFlushFrom(
+                    card_dict, suit, wild_card, current + 1, remain - 1, num_wild_card - 1)
+            elif card != wild_card:
+                next_straight = findAllStraightFlushFrom(
+                    card_dict, suit, wild_card, current + 1, remain - 1, num_wild_card)
+            if len(next_straight) > 0:
+                for data in next_straight:
+                    t = [card] + list(data)
+                    answer.append(t)
+    if not use_wild_card and num_wild_card > 0:
+        if remain == 0:
+            answer.append([wild_card])
+        else:
+            next_straight = findAllStraightFlushFrom(
+                card_dict, suit, wild_card, current + 1, remain - 1, num_wild_card - 1)
+            if len(next_straight) > 0:
+                for data in next_straight:
+                    t = [wild_card] + list(data)
+                    answer.append(t)
+    return answer
+
 def isStraightFlush(cardComb: Iterable[str], wild_card: str) -> Tuple[bool, Optional[str]]:
     '''
     @param cardComb
@@ -937,7 +958,7 @@ def isStraightFlush(cardComb: Iterable[str], wild_card: str) -> Tuple[bool, Opti
                 return (False, None)
     return (True, suit)
 
-def powerOfStraight(straight: Iterable[str], wild_card: str) -> int:
+def powerOfStraight(straight: Iterable[str], wild_card: str) -> str:
     p = 'None'
     num = -1
     for i in range(3):
@@ -1014,10 +1035,10 @@ def filterActions(actions: List[CardComb], base_action: Optional[CardComb], leve
     if base_action is None or base_action.is_pass():
         return actions
     elif base_action.t == 'Bomb' and base_action.rank == 16:
-        return [CardComb.create_pass_cardcomb()]
+        return [CardComb.pass_cardcomb()]
     elif not base_action.t in ['Bomb', 'StraightFlush']:
         final_actions = list()
-        final_actions.append(CardComb.create_pass_cardcomb())
+        final_actions.append(CardComb.pass_cardcomb())
         base_rank = base_action.rank
         for action in actions:
             temp = action.t
@@ -1032,7 +1053,7 @@ def filterActions(actions: List[CardComb], base_action: Optional[CardComb], leve
         return final_actions
     elif base_action.t == 'StraightFlush':
         final_actions = list()
-        final_actions.append(CardComb.create_pass_cardcomb())
+        final_actions.append(CardComb.pass_cardcomb())
         base_rank = base_action.rank
         for action in actions:
             temp = action.t
@@ -1045,7 +1066,7 @@ def filterActions(actions: List[CardComb], base_action: Optional[CardComb], leve
         return final_actions
     else:
         final_actions = list()
-        final_actions.append(CardComb.create_pass_cardcomb())
+        final_actions.append(CardComb.pass_cardcomb())
         base_size = len(base_action.cards)
         base_rank = base_action.rank
         for action in actions:
@@ -1089,7 +1110,7 @@ def canPlayAllInOnce(actions: List[CardComb], num_card: int) -> int:
             break
     return index
 
-def getFlagsForActions(all_combs : List[CardComb], wild_card : str) -> List[List[int]]:
+def getFlagsForActions(all_combs : List[CardComb], wild_card : str, base_action : CardComb, level : int) -> List[List[int]]:
     
     def init_flags(flags : List) -> None:
         for i in TypeNums:
@@ -1099,32 +1120,103 @@ def getFlagsForActions(all_combs : List[CardComb], wild_card : str) -> List[List
     init_flags(flags)
     size = 0
     suit = 0
+    value = 0
     
     for comb in all_combs:
+        value = 2 if CardComb.actionComparision(comb, base_action, level) else 1
         type_index = TypeIndex[comb.t]
         if type_index == 8:
             if comb.rank == 16:
-                flags[type_index][-1] = 1
+                flags[type_index][-1] = 2
             else:
                 size = len(comb.cards)
-                flags[type_index][(size - 4) * 13 + comb.rank - 1] = 1
+                flags[type_index][(size - 4) * 13 + comb.rank - 1] = value
         if type_index <= 7 and type_index >= 4:
             if type_index == 7:
                 suit = SUITS.index(suitOfStraightFlush(comb.cards, wild_card))
-                flags[type_index][suit * 10 + comb.rank - 1] = 1
+                flags[type_index][suit * 10 + comb.rank - 1] = value
             else:
-                flags[type_index][comb.rank - 1] = 1
+                flags[type_index][comb.rank - 1] = value
         else:
-            flags[type_index][comb.rank] = 1
+            flags[type_index][comb.rank] = value
     return flags
 
+def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild_card : str) -> List[List[int]]:
+    temp_dict = copy.copy(card_dict)
+    
+    for card in action.cards:
+        temp_dict[card] -= 1
+        temp_dict['total'] -= 1
+    
+    flags = []
+    
+    for _ in range(4):
+        flags.append([0] * 10)
+    
+    if temp_dict['total'] < 5:
+        return flags
+    
+    sfs = findAllStraightFlushes(temp_dict, wild_card)
+    
+    if len(sfs) > 0:
+        for sf in sfs:
+            suit = suitOfStraightFlush(sf, wild_card)
+            power = powerOfStraight(sf, wild_card)
+            rank = 1 if power == 'A' else numOfCard(f"S{power}")
+            flags[SUITS.index(suit) * 10][rank - 1] = 1
+    
+    return flags
+
+def getChoiceUnderAction(card_dict : Dict[str, int], actions : List[CardComb], wild_card : str) -> CardComb:
+    answer : Optional[CardComb] = None
+    lowest_wild_card_num : int = 3
+    highest_score : int = -1
+    for action in actions:
+        flags_sf = getFlagsForStraightFlush(card_dict, action, wild_card)
+        score = scoreOfSraightFlushFlags(flags_sf)
+        wcn = action.num_wild_card(wild_card)
+        if wcn < lowest_wild_card_num:
+            answer = action
+            highest_score = score
+        elif wcn == lowest_wild_card_num:
+            if score > highest_score:
+                answer = action
+                highest_score = score
+    return answer
+
+def scoreOfSraightFlushFlags(flags : List[List[int]]) -> int:
+    score = 0
+    
+    for flag in flags:
+        for i in range(10):
+            score += flag[i] * (i + 1)
+    
+    return score
+
+def checkCardCombTypeRank(cardcomb : CardComb, combbase : CombBase) -> bool:
+    return cardcomb.t == combbase.t and cardcomb.rank == combbase.rank     
 
 if __name__ == "__main__":
-    level = 1
-    actions = []
-    actions.append(CardComb('Single', 1, ['H2']))
-    actions.append(CardComb('StraightFlush', 3, ['D3', 'D4', 'D5', 'D6', 'D7']))
+    level = 3
     
-    flags = getFlagsForActions(actions, getWildCard(level))
+    card_dict = getCardDict()
+    card_dict['S2'] = 1
+    card_dict['S3'] = 1
+    card_dict['S4'] = 1
+    card_dict['S5'] = 1
+    card_dict['D5'] = 2
+    card_dict['S6'] = 1
+    card_dict['total'] = 6
     
-    print(flags)
+    # all_combs = findAllCombs(card_dict, level)
+    
+    # for comb in all_combs:
+    #     print(comb)
+    
+    actions = list()
+    actions.append(CardComb('Single', 4, ['S5']))
+    actions.append(CardComb('Single', 4, ['D5']))
+    
+    choice = getChoiceUnderAction(card_dict, actions, getWildCard(level))
+    
+    print(choice)

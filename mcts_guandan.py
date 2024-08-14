@@ -10,8 +10,10 @@ import numpy as np
 import copy
 
 # from game import Board
-from typing import Callable
-from guandan_game import GDGameStatus
+from typing import Callable, Dict
+from guandan_game import Cards, CardComb
+
+from utils import *
 
 
 def softmax(x):
@@ -28,8 +30,8 @@ class TreeNode(object):
     """
 
     def __init__(self, parent, prior_p):
-        self._parent = parent
-        self._children = {}  # a map from action to TreeNode
+        self._parent : TreeNode = parent
+        self._children : Dict[CardComb, TreeNode] = {}  # a map from action to TreeNode
         self._n_visits = 0
         self._Q = 0
         self._u = 0
@@ -107,7 +109,7 @@ class MCTS(object):
         self._c_puct: int = c_puct
         self._n_playout: int = n_playout
 
-    def _playout(self, state):
+    def _playout(self, cards : Cards):
         """Run a single playout from the root to the leaf, getting a value at
         the leaf and propagating it back through its parents.
         State is modified in-place, so a copy must be provided.
@@ -118,24 +120,27 @@ class MCTS(object):
                 break
             # Greedily select next move.
             action, node = node.select(self._c_puct)
-            state.do_move(action)
+            cards.do_action(action)
 
         # Evaluate the leaf using a network which outputs a list of
         # (action, probability) tuples p and also a score v in [-1, 1]
         # for the current player.
-        action_probs, leaf_value = self._policy(state)
+        my_states = None
+        oppo_states = None
+        last_action = None
+        current_level = None
+        
+        action_probs, leaf_value = self._policy(my_states, oppo_states, last_action, current_level)
         # Check for end of game.
-        end, winner = state.game_end()
-        if not end:
+        is_end = cards.has_a_winner()
+        if is_end == 0:
             node.expand(action_probs)
         else:
             # for end state，return the "true" leaf_value
-            if winner == -1:  # tie
-                leaf_value = 0.0
+            if is_end == cards.get_current_player():  # tie
+                leaf_value = 1.0
             else:
-                leaf_value = (
-                    1.0 if winner == state.get_current_player() else -1.0
-                )
+                leaf_value = -1.0
 
         # Update value and visit count of nodes in this traversal.
         node.update_recursive(-leaf_value)
@@ -186,7 +191,7 @@ class MCTSPlayer(object):
     def reset_player(self):
         self.mcts.update_with_move(-1)
 
-    def get_action(self, cards : GDGameStatus, temp=1e-3, return_prob=0):
+    def get_action(self, cards : Cards, temp=1e-3, return_prob=0):
         # cards包括了两个list，一个玩家a的手牌，一个玩家b的手牌
         # the pi vector returned by MCTS as in the alphaGo Zero paper
         move_probs = np.zeros(224)
