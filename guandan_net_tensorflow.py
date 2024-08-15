@@ -1,9 +1,7 @@
 import tensorflow as tf
 
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 from numpy import ndarray as nplist
-
-from guandan_game import Cards as CurrentStatus
 
 tf.compat.v1.disable_eager_execution()
 
@@ -45,6 +43,7 @@ class GuandanNetForTwo(GuandanNetBase):
         self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
         # (Flag for each action)
         # (Remark: '-' implies always 0 because such action does not exist)
+        # (Given the last action is A. If the action can be played freely, value is 1; If the action can be played after action A, value is 2)
         # [
             # Single        [2, 3, 4, ... A, B, R]
             # Pair          [2, 3, 4, ... A, B, R]
@@ -60,9 +59,9 @@ class GuandanNetForTwo(GuandanNetBase):
             # ...
             # Bomb(9)       [2, 3, 4, ... A, -, -]
             # Bomb(10)      [2, 3, 4, ... A, -, -]
-            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [1, 1, 1, ..., 1] with length of 15. Else it is all zero)
+            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 15, 15])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15])
         # [
             # S2, S3, S4, ... SA, 
             # H2, H3, H4, ... HA,
@@ -75,6 +74,7 @@ class GuandanNetForTwo(GuandanNetBase):
         self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
         # (Flag for each action)
         # (Remark: '-' implies always 0 because such action does not exist)
+        # (Given the last action is A. If the action can be played freely, value is 1; If the action can be played after action A, value is 2)
         # [
             # Single        [2, 3, 4, ... A, B, R]
             # Pair          [2, 3, 4, ... A, B, R]
@@ -90,9 +90,9 @@ class GuandanNetForTwo(GuandanNetBase):
             # ...
             # Bomb(9)       [2, 3, 4, ... A, -, -]
             # Bomb(10)      [2, 3, 4, ... A, -, -]
-            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [1, 1, 1, ..., 1] with length of 15. Else it is all zero)
+            # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 15, 15])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])
@@ -154,33 +154,55 @@ class GuandanNetForTwo(GuandanNetBase):
         if model_file is not None:
             self.restore_model(model_file)
     
-    def policy_value_function(self, my_states : List, oppo_states : List, last_action : List, level : List) -> nplist:
-        return self.get_prob(my_states, oppo_states, last_action, level)
+    def policy_value_function(self, my_states : Tuple[nplist, nplist], oppo_states : Tuple[nplist, nplist],\
+            last_action : nplist, level : nplist) -> nplist:
+        return self.get_prob(my_states[0], my_states[1], oppo_states[0], oppo_states[1], last_action, level)
     
-    def get_prob(self, my_states : List, oppo_states : List, last_action : List, level : List) -> nplist:
+    def get_prob(self, my_state1 : nplist, my_state2 : nplist,\
+                        oppo_state1 : nplist, oppo_state2 : nplist,\
+                            last_action1 : nplist, last_action2 : nplist, level : nplist) -> nplist:
         log_act_prob = self.session.run(
             [self.policy_prob],
-            feed_dict={self.input_my_hand_card : my_states[0],
-                       self.input_my_action_flags : my_states[1],
-                       self.input_oppo_hand_card : oppo_states[0],
-                       self.input_oppo_action_flags : oppo_states[1],
-                       self.last_move_type : last_action[0],
-                       self.last_move_rank : last_action[1],
+            feed_dict={self.input_my_hand_card : my_state1,
+                       self.input_my_action_flags : my_state2,
+                       self.input_oppo_hand_card : oppo_state1,
+                       self.input_oppo_action_flags : oppo_state2,
+                       self.last_move_type : last_action1,
+                       self.last_move_rank : last_action2,
                        self.current_level : level
                        }
         )
         return log_act_prob
     
-    def train_step(self, my_states : List, oppo_states : List, last_action : List, level : List, prob_label : List, final_score : List):
+    def get_value(self, my_state1 : nplist, my_state2 : nplist,\
+                        oppo_state1 : nplist, oppo_state2 : nplist,\
+                            last_action1 : nplist, last_action2 : nplist, level : nplist) -> nplist:
+        v = self.session.run(
+            [self.q_value],
+            feed_dict={self.input_my_hand_card : my_state1,
+                       self.input_my_action_flags : my_state2,
+                       self.input_oppo_hand_card : oppo_state1,
+                       self.input_oppo_action_flags : oppo_state2,
+                       self.last_move_type : last_action1,
+                       self.last_move_rank : last_action2,
+                       self.current_level : level
+                       }
+        )
+        return v
+    
+    def train_step(self, my_state1 : nplist, my_state2 : nplist,\
+                            oppo_state1 : nplist, oppo_state2 : nplist,\
+                            last_action1 : nplist, last_action2 : nplist, level : nplist,\
+                            prob_label : nplist, final_score : nplist):
         # """perform a training step"""
         loss, _ = self.session.run(
             [self.loss, self.optimizer],
-            feed_dict={self.input_my_hand_card : my_states[0],
-                       self.input_my_action_flags : my_states[1],
-                       self.input_oppo_hand_card : oppo_states[0],
-                       self.input_oppo_action_flags : oppo_states[1],
-                       self.last_move_type : last_action[0],
-                       self.last_move_rank : last_action[1],
+            feed_dict={self.input_my_hand_card : my_state1,
+                       self.input_my_action_flags : my_state2,
+                       self.input_oppo_hand_card : oppo_state1,
+                       self.input_oppo_action_flags : oppo_state2,
+                       self.last_move_type : last_action1,
+                       self.last_move_rank : last_action2,
                        self.current_level : level,
                        self.policy_prob_label : prob_label,
                        self.q_label : final_score,

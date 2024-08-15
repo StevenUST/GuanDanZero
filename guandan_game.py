@@ -1,19 +1,25 @@
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Callable
 
 from cardcomb import CardComb, CombBase
-from utils import cardsToDict, findAllCombs, filterActions, getWildCard, updateCardCombsAfterAction, generateNRandomCardLists, getChoiceUnderAction,\
-    checkCardCombTypeRank
+from utils import cardsToDict, findAllCombs, getWildCard, updateCardCombsAfterAction, generateNRandomCardLists, getChoiceUnderAction,\
+    checkCardCombTypeRank, getFlagsForActions, cardDictToModelList
 
 from random import randint
+from guandan_net_tensorflow import GuandanNetForTwo
+from mcts_guandan import MCTS
+
+from numpy import ndarray as nplist, ascontiguousarray, float32 as npf32
 
 class Cards(object):
 
-    def __init__(self):
+    def __init__(self, policy_value_fn : Callable):
         self.cd1 : Optional[Dict[str, int]] = None
         self.cd2 : Optional[Dict[str, int]] = None
         self.comb1 : Optional[List[CardComb]] = None
         self.comb2 : Optional[List[CardComb]] = None
-        self.last_moves : Optional[CardComb] = None
+        self.mcts1 : MCTS = MCTS(policy_value_fn, c_puct=5, n_playout=100)
+        self.mcts2 : MCTS = MCTS(policy_value_fn, c_puct=5, n_playout=100)
+        self.last_move : CardComb = CardComb.pass_cardcomb()
         self.level = 1
 
     def init_cards(self, card1: List[str], card2 : List[str], level: int) -> None:
@@ -22,18 +28,57 @@ class Cards(object):
         self.cd2 = cardsToDict(card2)
         self.comb1 = findAllCombs(self.cd1, self.level)
         self.comb2 = findAllCombs(self.cd2, self.level)
-        self.last_move : Optional[CardComb] = None
         # Either 1 or 2.
         self.current_player : int = 1
 
-    def current_state(self, current_player : bool) -> List:
+    def current_states(self, current_player : bool) -> Tuple[nplist, nplist]:
+        index = 0
         if current_player:
-            pass
+            index = self.current_player
         else:
-            pass
+            index = 3 - self.current_player
+        
+        hand_cards = None
+        flags = None
+        
+        if index == 1:
+            hand_cards = cardDictToModelList(self.cd1, self.level)
+            flags = getFlagsForActions(self.comb1, self.last_move, getWildCard(self.level))
+        else:
+            hand_cards = cardDictToModelList(self.cd2, self.level)
+            flags = getFlagsForActions(self.comb2, self.last_move, getWildCard(self.level))
+            
+        return (ascontiguousarray(hand_cards, dtype=npf32), ascontiguousarray(flags, dtype=npf32))
+        
+    
+    def last_move_list(self) -> Tuple[nplist, nplist]:
+        action_list = [0] * 17
+        rank_list = [0] * 15
+        
+        if self.last_move is None or self.last_move.is_pass():
+            action_list[0] = 1
+        else:
+            type_index = self.last_move.type_index()
+            action_list[type_index] = 1
+            if type_index == 16:
+                for i in range(15):
+                    rank_list[i] = 1
+            else:
+                rank_list[self.last_move.rank - 1] = 1
+        
+        return (ascontiguousarray(action_list, dtype=npf32), ascontiguousarray(rank_list, dtype=npf32))
+        
+    def level_list(self) -> nplist:
+        answer = [0] * 13
+        answer[self.level - 1] = 1
+        return ascontiguousarray(answer, dtype=npf32)
 
-    def get_action(self) -> Tuple[int, CombBase, List[float]]:
-        pass
+    def get_action(self) -> Tuple[int, List[int], List[float]]:
+        if self.current_player == 1:
+            acts, probs = self.mcts1.get_move_probs(self, temp=0.001)
+        else:
+            acts, probs = self.mcts2.get_move_probs(self, temp=0.001)
+        return self.current_player, acts, probs
     
     def do_action(self, action : CardComb):
         self.last_move = action
@@ -61,8 +106,9 @@ class Cards(object):
 
 class GDGame2P:
 
-    def __init__(self):
-        self.cards: Cards = Cards()
+    def __init__(self, model_file : object = None):
+        self.model : GuandanNetForTwo = GuandanNetForTwo(model_file=model_file)
+        self.cards: Cards = Cards(model)
 
     def init_players(self, cards1: List[str], cards2: List[str], level: int) -> None:
         self.cards.init_cards(cards1, cards2, level)
@@ -90,40 +136,3 @@ class GDGame2P:
 
     def game_over(self) -> bool:
         return self.cards.has_a_winner() > 0
-
-    def start_self_play_dummy(self, player, is_shown=0, temp=1e-3):
-        """ start a self-play game using a MCTS player, reuse the search tree,
-        and store the self-play data: (state, mcts_probs, z) for training
-        """
-        pass
-        # self.init_players()  # 需要随机自动分配牌
-        # p1 = self.p1
-        # p2 = self.p2
-        # states, mcts_probs, current_players = [], [], []
-        # while True:
-        #     move, move_probs = player.get_action(self.board,
-        #                                          temp=temp,
-        #                                          return_prob=1)
-        #     # store the data
-        #     states.append(self.board.current_cards())  # 两个人的手牌
-        #     mcts_probs.append(move_probs)
-        #     current_players.append(self.board.current_player)
-        #     # perform a move
-        #     self.cards.do_move(move)
-        #     # if is_shown:
-        #     #    self.graphic(self.board, p1, p2)
-        #     end, winner = self.Cards.game_end()
-        #     if end:
-        #         # winner from the perspective of the current player of each state
-        #         winners_z = np.zeros(len(current_players))
-        #         if winner != -1:
-        #             winners_z[np.array(current_players) == winner] = 1.0
-        #             winners_z[np.array(current_players) != winner] = -1.0
-        #         # reset MCTS root node
-        #         player.reset_player()
-        #         if is_shown:
-        #             if winner != -1:
-        #                 print("Game end. Winner is player:", winner)
-        #             else:
-        #                 print("Game end. Tie")
-        #         return winner, zip(states, mcts_probs, winners_z)

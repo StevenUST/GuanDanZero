@@ -5,6 +5,10 @@ NumToCardNum: Final[Dict[int, str]] = {
     10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: 'B', 16: 'R'
 }
 
+TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'ThreeWithTwo' : 3, 
+                                     'TwoTrips' : 4, 'ThreePairs' : 5, 'Straight' : 6, 'StraightFlush' : 7,
+                                     'Bomb' : 8}
+
 def isLargerThanRank(r1: int, r2: int, level: Optional[int]) -> bool:
     '''
     return @param r1 > @param r2 base on @param level
@@ -70,13 +74,23 @@ class CardComb(CombBase):
     def num_wild_card(self, wild_card : str) -> int:
         return self.cards.count(wild_card)
     
+    def type_index(self) -> int:
+        if self.is_pass():
+            return 0
+        elif self.t == 'Bomb' and self.rank == 16:
+            return 16
+        else:
+            index = TypeIndex[self.t]
+            if index == 8:
+                index += (len(self.cards) - 4)
+    
     @staticmethod
     def actionComparision(action : object, base : object, level : int) -> bool:
         '''
         If @param action can be played given the last action is @param base, it returns True; Else it returns False.
         '''
         if not (isinstance(action, CardComb) and isinstance(base, CardComb)):
-            raise ValueError("@param action and @param base both must be instances of @class CombBase!")
+            raise ValueError("@param action and @param base both must be instances of @class CardComb!")
         if base.is_pass():
             return not action.is_pass()
         if base.t == 'Bomb' and base.rank == 16:

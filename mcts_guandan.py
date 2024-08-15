@@ -11,7 +11,7 @@ import copy
 
 # from game import Board
 from typing import Callable, Dict
-from guandan_game import Cards, CardComb
+# from guandan_game import Cards, CardComb
 
 from utils import *
 
@@ -109,7 +109,7 @@ class MCTS(object):
         self._c_puct: int = c_puct
         self._n_playout: int = n_playout
 
-    def _playout(self, cards : Cards):
+    def _playout(self, cards):
         """Run a single playout from the root to the leaf, getting a value at
         the leaf and propagating it back through its parents.
         State is modified in-place, so a copy must be provided.
@@ -125,10 +125,10 @@ class MCTS(object):
         # Evaluate the leaf using a network which outputs a list of
         # (action, probability) tuples p and also a score v in [-1, 1]
         # for the current player.
-        my_states = None
-        oppo_states = None
-        last_action = None
-        current_level = None
+        my_states = cards.current_states(cards.current_player)
+        oppo_states = cards.current_states(3 - cards.current_player)
+        last_action = cards.last_move_list()
+        current_level = cards.level_list()
         
         action_probs, leaf_value = self._policy(my_states, oppo_states, last_action, current_level)
         # Check for end of game.
@@ -145,14 +145,14 @@ class MCTS(object):
         # Update value and visit count of nodes in this traversal.
         node.update_recursive(-leaf_value)
 
-    def get_move_probs(self, state, temp=1e-3):
+    def get_move_probs(self, cards, temp=1e-3):
         """Run all playouts sequentially and return the available actions and
         their corresponding probabilities.
         state: the current game state
         temp: temperature parameter in (0, 1] controls the level of exploration
         """
         for _ in range(self._n_playout):
-            state_copy = copy.deepcopy(state)
+            state_copy = copy.deepcopy(cards)
             self._playout(state_copy)
 
         # calc the move probabilities based on visit counts at the root node
@@ -175,54 +175,3 @@ class MCTS(object):
 
     def __str__(self):
         return "MCTS"
-
-
-class MCTSPlayer(object):
-    """AI player based on MCTS"""
-
-    def __init__(self, policy_value_function,
-                 c_puct=5, n_playout=2000, is_selfplay=0):
-        self.mcts = MCTS(policy_value_function, c_puct, n_playout)
-        self._is_selfplay = is_selfplay
-
-    def set_player_ind(self, p):
-        self.player = p
-
-    def reset_player(self):
-        self.mcts.update_with_move(-1)
-
-    def get_action(self, cards : Cards, temp=1e-3, return_prob=0):
-        # cards包括了两个list，一个玩家a的手牌，一个玩家b的手牌
-        # the pi vector returned by MCTS as in the alphaGo Zero paper
-        move_probs = np.zeros(224)
-        if cards[0] > 0 and cards[1] > 0:
-            acts, probs = self.mcts.get_move_probs(cards, temp) # -> 要写一个cards类()
-            move_probs[list(acts)] = probs
-            if self._is_selfplay:
-                # add Dirichlet Noise for exploration (needed for
-                # self-play training)
-                move = np.random.choice(
-                    acts,
-                    p=0.75*probs + 0.25 *
-                    np.random.dirichlet(0.3*np.ones(len(probs)))
-                )
-                # update the root node and reuse the search tree
-                self.mcts.update_with_move(move)
-            else:
-                # with the default temp=1e-3, it is almost equivalent
-                # to choosing the move with the highest prob
-                move = np.random.choice(acts, p=probs)
-                # reset the root node
-                self.mcts.update_with_move(-1)
-#                location = board.move_to_location(move)
-#                print("AI move: %d,%d\n" % (location[0], location[1]))
-
-            if return_prob:
-                return move, move_probs
-            else:
-                return move
-        else:
-            print("WARNING: the board is full")
-
-    def __str__(self):
-        return "MCTS {}".format(self.player)

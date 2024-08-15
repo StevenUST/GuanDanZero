@@ -18,7 +18,7 @@ TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'Thre
                                      'TwoTrips' : 4, 'ThreePairs' : 5, 'Straight' : 6, 'StraightFlush' : 7,
                                      'Bomb' : 8}
 
-TypeNums : Final[List[int]] = [15, 15, 13, 13, 13, 12, 10, 40, 92]
+TypeNums : Final[List[int]] = [15, 15, 13, 13, 13, 12, 10, 13, 13, 10, 13, 13, 13, 13, 13, 13]
 
 AllTypes : Final[int] = 223
 
@@ -39,8 +39,15 @@ NumToSuit: Final[Dict[int, str]] = {
     0: 'S', 1: 'H', 2: 'C', 3: 'D'
 }
 
-def inRange(val: int, bound: Tuple[int, int]) -> bool:
-    return val <= bound[1] and val >= bound[0]
+def stageNum(num_of_card : int) -> int:
+    if num_of_card >= 20:
+        return 0
+    elif num_of_card >= 12:
+        return 1
+    elif num_of_card >= 7:
+        return 2
+    else:
+        return 9 - num_of_card
 
 def getWildCard(level: int) -> str:
     if level < 1:
@@ -169,6 +176,31 @@ def cardDictToList(card_dict: Dict[str, int]) -> List[str]:
                     cards.extend([card] * card_num)
 
     return cards
+
+def cardDictToModelList(card_dict : Dict[str, int], level : int) -> List[int]:
+    answer = [0] * 70
+    
+    for i in range(15):
+        power = POWERS[i]
+        if not power in ['B', 'R']:
+            total = 0
+            for suit in SUITS:
+                card = f"{suit}{power}"
+                answer[cardToNum(card)] = card_dict[card]
+                total += card_dict[card]
+            answer[54 + i] = total
+        elif power == 'B':
+            answer[52] = card_dict['SB']
+        else:
+            answer[53] = card_dict['HR']
+    
+    wild_card = getWildCard(level)
+    
+    answer[67] = card_dict[wild_card]
+    answer[68] = card_dict['total']
+    answer[69] = stageNum(card_dict['total'])
+    
+    return answer
 
 def isLegalCardDict(card_dict: Dict[str, int]) -> bool:
     keys = list(card_dict.keys())
@@ -1110,16 +1142,15 @@ def canPlayAllInOnce(actions: List[CardComb], num_card: int) -> int:
             break
     return index
 
-def getFlagsForActions(all_combs : List[CardComb], wild_card : str, base_action : CardComb, level : int) -> List[List[int]]:
+def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level : int) -> List[List[int]]:
     
     def init_flags(flags : List) -> None:
-        for i in TypeNums:
-            flags.append([0] * i)
+        for _ in range(16):
+            flags.append([0] * 15)
     
     flags = []
     init_flags(flags)
     size = 0
-    suit = 0
     value = 0
     
     for comb in all_combs:
@@ -1127,14 +1158,17 @@ def getFlagsForActions(all_combs : List[CardComb], wild_card : str, base_action 
         type_index = TypeIndex[comb.t]
         if type_index == 8:
             if comb.rank == 16:
-                flags[type_index][-1] = 2
+                for i in range(15):
+                    flags[15][i] = 2
             else:
                 size = len(comb.cards)
-                flags[type_index][(size - 4) * 13 + comb.rank - 1] = value
+                if size < 6:
+                    flags[3 + size][comb.rank - 1] = value
+                else:
+                    flags[4 + size][comb.rank - 1] = value
         if type_index <= 7 and type_index >= 4:
             if type_index == 7:
-                suit = SUITS.index(suitOfStraightFlush(comb.cards, wild_card))
-                flags[type_index][suit * 10 + comb.rank - 1] = value
+                flags[9][comb.rank - 1] = value
             else:
                 flags[type_index][comb.rank - 1] = value
         else:
@@ -1208,15 +1242,12 @@ if __name__ == "__main__":
     card_dict['S6'] = 1
     card_dict['total'] = 6
     
-    # all_combs = findAllCombs(card_dict, level)
+    all_combs = findAllCombs(card_dict, level)
     
-    # for comb in all_combs:
-    #     print(comb)
+    flags = getFlagsForActions(all_combs, CardComb('Straight', 1, ['CA', 'C2', 'C3', 'D4', 'D5']), level)
     
-    actions = list()
-    actions.append(CardComb('Single', 4, ['S5']))
-    actions.append(CardComb('Single', 4, ['D5']))
+    import numpy as np
     
-    choice = getChoiceUnderAction(card_dict, actions, getWildCard(level))
+    flags2 = np.ascontiguousarray(flags)
     
-    print(choice)
+    print(flags2)
