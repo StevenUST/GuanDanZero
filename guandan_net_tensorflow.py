@@ -1,36 +1,14 @@
 import tensorflow as tf
 
 from typing import Tuple, Optional
-from numpy import ndarray as nplist
+from numpy import ndarray as nplist, exp as npexp, reshape
 
 tf.compat.v1.disable_eager_execution()
 
-class GuandanNetBase():
-    
-    def __init__(self, learning_rate : float = 0.01) -> None:
-        self.lr = learning_rate
-        self.saver : Optional[tf.compat.v1.train.Saver] = None
-        self.session : Optional[tf.compat.v1.Session] = None
+class GuandanNetForTwo:
 
-    def update_learning_rate(self, lr : float) -> None:
-        assert lr > 0.0
+    def __init__(self, lr : float = 0.01, model_file=None) -> None:
         self.lr = lr
-
-    def save_model(self, model_path):
-        if self.saver is not None:
-            self.saver.save(self.session, model_path)
-        else:
-            raise RuntimeError("The saver is not initialized yet.")
-
-    def restore_model(self, model_path):
-        if self.saver is not None:
-            self.saver.restore(self.session, model_path)
-            raise RuntimeError("The saver is not initialized yet.")
-
-class GuandanNetForTwo(GuandanNetBase):
-
-    def __init__(self, lr : float = 0.01, model_file=None):
-        super().__init__(learning_rate=lr)
         # [
             # S2, S3, S4, ... SA, 
             # H2, H3, H4, ... HA,
@@ -61,7 +39,7 @@ class GuandanNetForTwo(GuandanNetBase):
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
         # [
             # S2, S3, S4, ... SA, 
             # H2, H3, H4, ... HA,
@@ -92,7 +70,7 @@ class GuandanNetForTwo(GuandanNetBase):
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])
@@ -119,17 +97,18 @@ class GuandanNetForTwo(GuandanNetBase):
         
         self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.my_flatten_layer,
                                                          self.input_oppo_hand_card, self.oppo_flatten_layer,
-                                                         self.last_move_type, self.last_move_rank, self.current_level
-                                                        ])
+                                                         self.last_move_type, self.last_move_rank, self.current_level])
         
-        self.layer2 = tf.keras.layers.Dense(units=512, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer1)
-        self.layer3 = tf.keras.layers.Dense(units=512, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer2)
-        self.layer4 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer3)
-        self.layer5 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer4)
-        self.layer6 = tf.keras.layers.Dense(units=256, activation=tf.keras.layers.LeakyReLU(alpha=0.01))(self.layer5)
+        self.layer2 = tf.keras.layers.Dense(units=1024, activation=tf.keras.activations.relu)(self.layer1)
+        self.layer3 = tf.keras.layers.Dense(units=512, activation=tf.keras.activations.relu)(self.layer2)
+        self.layer4 = tf.keras.layers.Dense(units=256, activation=tf.keras.activations.relu)(self.layer3)
         
-        self.policy_prob = tf.keras.layers.Dense(units=194)(self.layer6)
-        self.q_value = tf.keras.layers.Dense(units=1)(self.layer6)
+        self.q_layer2 = tf.keras.layers.Dense(units=512, activation=tf.keras.activations.relu)(self.layer1)
+        self.q_layer3 = tf.keras.layers.Dense(units=128, activation=tf.keras.activations.relu)(self.q_layer2)
+        self.q_layer4 = tf.keras.layers.Dense(units=32, activation=tf.keras.activations.relu)(self.q_layer3)
+        
+        self.policy_prob = tf.keras.layers.Dense(units=194, activation=tf.nn.log_softmax)(self.layer4)
+        self.q_value = tf.keras.layers.Dense(units=1, activation=tf.nn.tanh)(self.q_layer4)
         
         self.policy_prob_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 194])
         self.q_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 1])
@@ -146,23 +125,31 @@ class GuandanNetForTwo(GuandanNetBase):
         self.session = tf.compat.v1.Session()
 
         # Initialize variables
-        init = tf.compat.v1.global_variables_initializer()
-        self.session.run(init)
+        self.session.run(tf.compat.v1.global_variables_initializer())
 
         # For saving and restoring
         self.saver = tf.compat.v1.train.Saver()
         if model_file is not None:
             self.restore_model(model_file)
     
-    def policy_value_function(self, my_states : Tuple[nplist, nplist], oppo_states : Tuple[nplist, nplist],\
-            last_action : nplist, level : nplist) -> nplist:
-        return self.get_prob(my_states[0], my_states[1], oppo_states[0], oppo_states[1], last_action, level)
+    def update_learning_rate(self, lr : float) -> None:
+        assert lr > 0.0
+        self.lr = lr
+
+    def save_model(self, model_path):
+        self.saver.save(self.session, model_path)
+
+    def restore_model(self, model_path):
+        self.saver.restore(self.session, model_path)
+    
+    def policy_value_function(self, my_states : Tuple[nplist, nplist], oppo_states : Tuple[nplist, nplist], last_action : Tuple[nplist, nplist], level : nplist) -> nplist:
+        return self.get_prob(my_states[0], my_states[1], oppo_states[0], oppo_states[1], last_action[0], last_action[1], level)
     
     def get_prob(self, my_state1 : nplist, my_state2 : nplist,\
                         oppo_state1 : nplist, oppo_state2 : nplist,\
-                            last_action1 : nplist, last_action2 : nplist, level : nplist) -> nplist:
-        log_act_prob = self.session.run(
-            [self.policy_prob],
+                            last_action1 : nplist, last_action2 : nplist, level : nplist) -> Tuple[nplist, int]:
+        log_act_prob, value = self.session.run(
+            [self.policy_prob, self.q_value],
             feed_dict={self.input_my_hand_card : my_state1,
                        self.input_my_action_flags : my_state2,
                        self.input_oppo_hand_card : oppo_state1,
@@ -172,7 +159,8 @@ class GuandanNetForTwo(GuandanNetBase):
                        self.current_level : level
                        }
         )
-        return log_act_prob
+        act_probs = npexp(log_act_prob)
+        return act_probs, value
     
     def get_value(self, my_state1 : nplist, my_state2 : nplist,\
                         oppo_state1 : nplist, oppo_state2 : nplist,\

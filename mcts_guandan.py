@@ -9,18 +9,14 @@ network to guide the tree search and evaluate the leaf nodes
 import numpy as np
 import copy
 
-# from game import Board
-from typing import Callable, Dict
-# from guandan_game import Cards, CardComb
-
-from utils import *
-
+from typing import Callable, Dict, Tuple, List
+from cardcomb import CombBase
+from utils import assignCombBaseToProbs, indexOfCombBase
 
 def softmax(x):
     probs = np.exp(x - np.max(x))
     probs /= np.sum(probs)
     return probs
-
 
 class TreeNode(object):
     """A node in the MCTS tree.
@@ -31,7 +27,7 @@ class TreeNode(object):
 
     def __init__(self, parent, prior_p):
         self._parent : TreeNode = parent
-        self._children : Dict[CardComb, TreeNode] = {}  # a map from action to TreeNode
+        self._children : Dict[CombBase, TreeNode] = {}  # a map from action to TreeNode
         self._n_visits = 0
         self._Q = 0
         self._u = 0
@@ -94,7 +90,7 @@ class TreeNode(object):
 class MCTS(object):
     """An implementation of Monte Carlo Tree Search."""
 
-    def __init__(self, policy_value_fn: Callable, c_puct=5, n_playout=10000):
+    def __init__(self, policy : Callable, c_puct=5, n_playout=10000):
         """
         policy_value_fn: a function that takes in a board state and outputs
             a list of (action, probability) tuples and also a score in [-1, 1]
@@ -104,12 +100,13 @@ class MCTS(object):
             converges to the maximum-value policy. A higher value means
             relying on the prior more.
         """
+        
         self._root: TreeNode = TreeNode(None, 1.0)
-        self._policy: Callable = policy_value_fn
+        self._policy : Callable = policy
         self._c_puct: int = c_puct
         self._n_playout: int = n_playout
 
-    def _playout(self, cards):
+    def _playout(self, cards : object):
         """Run a single playout from the root to the leaf, getting a value at
         the leaf and propagating it back through its parents.
         State is modified in-place, so a copy must be provided.
@@ -130,14 +127,18 @@ class MCTS(object):
         last_action = cards.last_move_list()
         current_level = cards.level_list()
         
+        # Shape: (1, ...)
         action_probs, leaf_value = self._policy(my_states, oppo_states, last_action, current_level)
+        action_probs_list = action_probs[0].tolist()
+        action_prob_tuple_list = assignCombBaseToProbs(action_probs_list, cards.current_player_comb_indices(), cards.last_move, cards.level)
+        
         # Check for end of game.
         is_end = cards.has_a_winner()
         if is_end == 0:
-            node.expand(action_probs)
+            node.expand(action_prob_tuple_list)
         else:
             # for end state，return the "true" leaf_value
-            if is_end == cards.get_current_player():  # tie
+            if is_end == cards.get_current_player():
                 leaf_value = 1.0
             else:
                 leaf_value = -1.0
@@ -145,7 +146,7 @@ class MCTS(object):
         # Update value and visit count of nodes in this traversal.
         node.update_recursive(-leaf_value)
 
-    def get_move_probs(self, cards, temp=1e-3):
+    def get_move_probs(self, cards : object, temp=1e-4) -> Tuple[List[int], List[CombBase], np.ndarray[float]]:
         """Run all playouts sequentially and return the available actions and
         their corresponding probabilities.
         state: the current game state
@@ -159,9 +160,10 @@ class MCTS(object):
         act_visits = [(act, node._n_visits)
                       for act, node in self._root._children.items()]
         acts, visits = zip(*act_visits)
+        acts_index = [indexOfCombBase(act) for act in acts]
         act_probs = softmax(1.0/temp * np.log(np.array(visits) + 1e-10))
 
-        return acts, act_probs
+        return acts_index, acts, act_probs
 
     def update_with_move(self, last_move):
         """Step forward in the tree, keeping everything we already know
@@ -175,3 +177,36 @@ class MCTS(object):
 
     def __str__(self):
         return "MCTS"
+
+class MCTSPlayer(object):
+    """AI player based on MCTS"""
+
+    def __init__(self, policy_value_function,
+                 c_puct=5, n_playout=1000):
+        self.mcts = MCTS(policy_value_function, c_puct, n_playout)
+
+    def set_player_ind(self, p):
+        self.player = p
+
+    def reset_player(self):
+        self.mcts.update_with_move(-1)
+
+    def get_action(self, cards : object, temp=1e-3) -> Tuple[CombBase, List[float]]:
+        # the pi vector returned by MCTS as in the alphaGo Zero paper
+        move_probs = np.zeros(194, dtype=np.float32)
+        indices, acts, probs = self.mcts.get_move_probs(cards, temp)
+        move_probs[indices] = probs
+
+        # add Dirichlet Noise for exploration (needed for
+        # self-play training)
+        action = np.random.choice(
+            acts,
+            p=0.75*probs + 0.25*np.random.dirichlet(0.3*np.ones(len(probs)))
+        )
+        # update the root node and reuse the search tree
+        self.mcts.update_with_move(action)
+
+        return action, move_probs
+
+    def __str__(self):
+        return "MCTS {}".format(self.player)
