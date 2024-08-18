@@ -14,23 +14,8 @@ SUITS: Final[List[str]] = ['S', 'H', 'C', 'D']
 POWERS: Final[List[str]] = ['2', '3', '4', '5', '6',
                             '7', '8', '9', 'T', 'J', 'Q', 'K', 'A', 'B', 'R']
 
-ScoreWeights : Final[List[List[int]]] = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+ScoreWeights : Final[List[Tuple[int]]] = [
+    (1, 1), (2, 2), (3, 3), (5, 3), (6, 6), (6, 6), (5, 5), (100, 20), (460, 20), (560, 20), (1e7, 0)
 ]
 
 TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'ThreeWithTwo' : 3, 
@@ -1240,7 +1225,6 @@ def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild
     
     return flags
 
-# TODO
 def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], actions : List[CardComb], wild_card : str) -> CardComb:
     '''
     This function returns the best choice given the action base is ThreeWithTwo.
