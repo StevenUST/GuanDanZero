@@ -178,10 +178,10 @@ class GuandanNetForTwo:
         )
         return v
     
-    def train_step(self, my_state1 : nplist, my_state2 : nplist,\
-                            oppo_state1 : nplist, oppo_state2 : nplist,\
-                            last_action1 : nplist, last_action2 : nplist, level : nplist,\
-                            prob_label : nplist, final_score : nplist):
+    def train_step(self, my_state1 : nplist, my_state2 : nplist,
+                            oppo_state1 : nplist, oppo_state2 : nplist,
+                            last_action1 : nplist, last_action2 : nplist, level : nplist,
+                            prob_label : nplist, final_score : nplist) -> nplist:
         # """perform a training step"""
         loss, _ = self.session.run(
             [self.loss, self.optimizer],

@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Tuple, Callable
 
 from cardcomb import CardComb
-from utils import cardsToDict, findAllCombs, getWildCard, updateCardCombsAfterAction, generateNRandomCardLists, getChoiceUnderAction,\
+from utils import cardsToDict, findAllCombs, getWildCard, updateCardCombsAfterAction, generateNRandomCardLists, getChoiceUnderAction, getChoiceUnderThreeWithTwo,\
     checkCardCombTypeRank, getFlagsForActions, cardDictToModelList, indexOfCombBase
 
 from random import randint
@@ -30,8 +30,8 @@ class Cards(object):
         self.cd2 = cardsToDict(card2)
         self.comb1 = findAllCombs(self.cd1, self.level)
         self.comb2 = findAllCombs(self.cd2, self.level)
-        self.update_comb_index(self.comb1, 1)
-        self.update_comb_index(self.comb2, 2)
+        self.update_comb_index(self.comb1, None, 1)
+        self.update_comb_index(self.comb2, None, 2)
     
     def current_player_comb_indices(self) -> List[int]:
         if self.current_player == 1:
@@ -39,16 +39,18 @@ class Cards(object):
         else:
             return self.comb_index2
 
-    def update_comb_index(self, combs : List[CardComb], player_index : int, remove : bool = False) -> None:
+    def update_comb_index(self, combs : List[CardComb], leave_indices : Optional[List[int]], player_index : int, remove : bool = False) -> None:
         val = 0 if remove else 1
         if player_index == 1:
             for comb in combs:
                 index = indexOfCombBase(comb)
-                self.comb_index1[index] = val
+                if leave_indices is None or not index in leave_indices:
+                    self.comb_index1[index] = val
         else:
             for comb in combs:
                 index = indexOfCombBase(comb)
-                self.comb_index2[index] = val
+                if leave_indices is None or not index in leave_indices:
+                    self.comb_index2[index] = val
 
     def current_states(self, current_player : bool) -> Tuple[nplist, nplist]:
         index = 0
@@ -70,7 +72,7 @@ class Cards(object):
         t1 = ascontiguousarray(hand_cards, dtype=npf32)
         t2 = ascontiguousarray(flags, dtype=npf32)
         
-        return (reshape(t1, (1, 70)), reshape(t2, (1, 16, 15, 1)))
+        return t1, t2
     
     def last_move_list(self) -> Tuple[nplist, nplist]:
         action_list = [0] * 17
@@ -90,24 +92,27 @@ class Cards(object):
         t1 = ascontiguousarray(action_list, dtype=npf32)
         t2 = ascontiguousarray(rank_list, dtype=npf32)
         
-        return (reshape(t1, (1, 17)), reshape(t2, (1, 15)))
+        return t1, t2
         
     def level_list(self) -> nplist:
         answer = [0] * 13
         answer[self.level - 1] = 1
         t = ascontiguousarray(answer, dtype=npf32)
-        return reshape(t, (1, 13))
+        return t
     
     def do_action(self, action : CardComb):
         self.last_move = action
         fail_combs = None
         if self.current_player == 1:
             fail_combs, self.comb1 = updateCardCombsAfterAction(self.comb1, self.cd1, action)
-            self.update_comb_index(fail_combs, 1, True)
+            successful_comb_indices = [indexOfCombBase(c) for c in self.comb1]
+            self.update_comb_index(fail_combs, successful_comb_indices, 1, True)
+            self.current_player = 2
         else:
             fail_combs, self.comb2 = updateCardCombsAfterAction(self.comb2, self.cd2, action)
-            self.update_comb_index(fail_combs, 2, True)
-        self.current_player = 3 - self.current_player
+            successful_comb_indices = [indexOfCombBase(c) for c in self.comb2]
+            self.update_comb_index(fail_combs, successful_comb_indices, 2, True)
+            self.current_player = 1
 
     def has_a_winner(self):
         if self.cd1['total'] == 0:
@@ -127,42 +132,47 @@ class Cards(object):
 
 class GDGame2P:
 
-    def __init__(self, policy_value_fn : Callable):
+    def __init__(self):
         self.cards: Cards = Cards()
-        self.p1 = MCTSPlayer(policy_value_fn, is_selfplay=1)
 
     def init_players(self, cards1: List[str], cards2: List[str], level: int) -> None:
         self.cards.init_cards(cards1, cards2, level)
 
-    def start_self_play(self, player : MCTSPlayer) -> Tuple[List, List, List, int]:
-        random_cards = generateNRandomCardLists((12, 12))
-        level = randint(1, 13)
+    def start_play(self, player1 : MCTSPlayer, player2 : MCTSPlayer) -> Tuple[List[List[nplist]], List[nplist], List[int], int, int]:
+        random_cards = generateNRandomCardLists((4, 4))
+        level = randint(3, 3)
         self.init_players(random_cards[0], random_cards[1], level)
         states, mcts_probs, current_players = [], [], []
+        data_count = 0
         while not self.game_over():
-            action_base, action_probs = player.get_action(self.cards)
+            if self.cards.current_player == 1:
+                action_base, action_probs = player1.get_action(self.cards)
+            else:
+                action_base, action_probs = player2.get_action(self.cards)
             
             # Store data
-            my_states = self.cards.current_states(self.cards.current_player)
-            oppo_states = self.cards.current_states(3 - self.cards.current_player)
+            my_states = self.cards.current_states(True)
+            oppo_states = self.cards.current_states(False)
             last_action = self.cards.last_move_list()
             current_level = self.cards.level_list()
             
-            states.append([my_states[0], my_states[1], oppo_states[0], oppo_states[1], last_action[0], last_action[1], current_level])
+            states.append([my_states[0], my_states[1], oppo_states[0], oppo_states, last_action[0], last_action[1], current_level])
             mcts_probs.append(action_probs)
             current_players.append(self.cards.current_player)
+            data_count += 1
             
             # Filter All choices
             player_data = self.cards.get_player_status(self.cards.current_player)
             choices : List[CardComb] = list(filter(lambda comb : checkCardCombTypeRank(comb, action_base), player_data[1]))
+            choice : Optional[CardComb] = None
             
             # Get the choice under the given action
             if action_base.t == "ThreeWithTwo":
-                pass
+                choice : CardComb = getChoiceUnderThreeWithTwo(player_data[0], player_data[1], choices, level)
             else:
                 choice : CardComb = getChoiceUnderAction(player_data[0], choices, getWildCard(level))
             self.cards.do_action(choice)
-        return (states, mcts_probs, current_players, self.cards.has_a_winner())
+        return (states, mcts_probs, current_players, self.cards.has_a_winner(), data_count)
 
     def game_over(self) -> bool:
         return self.cards.has_a_winner() > 0

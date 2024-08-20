@@ -15,7 +15,8 @@ POWERS: Final[List[str]] = ['2', '3', '4', '5', '6',
                             '7', '8', '9', 'T', 'J', 'Q', 'K', 'A', 'B', 'R']
 
 ScoreWeights : Final[List[Tuple[int]]] = [
-    (1, 1), (2, 2), (3, 3), (5, 3), (6, 6), (6, 6), (5, 5), (100, 20), (460, 20), (560, 20), (1e7, 0)
+    (0, 1), (0, 2), (0, 3), (2, 3), (0, 6), (0, 6), (0, 5), (80, 20), (340, 20), (500, 20), (500, 20), (500, 20), (500, 20),
+        (600, 20), (860, 20), (1120, 20), (1380, 20), (1640, 20), (1e7, 0)
 ]
 
 TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'ThreeWithTwo' : 3, 
@@ -160,6 +161,12 @@ def getCardDict(empty: bool = True) -> Dict[str, int]:
     card_dict['HR'] = 0 if empty else 2
     card_dict['total'] = 0 if empty else 108
     return card_dict
+
+def addCardToDict(card_dict : Dict[str, int], cards : List[str]) -> None:
+    for card in cards:
+        if isLegalCard(card) and card_dict[card] < 2:
+            card_dict[card] += 1
+            card_dict['total'] += 1
 
 def cardsToDict(cards: List[str], value_to_remove: Optional[int] = None) -> Dict[str, int]:
     card_dict = getCardDict()
@@ -1047,13 +1054,15 @@ def updateCardCombsAfterAction(card_combs: List[CardComb], card_dict: Dict[str, 
     if not contain_action:
         return (list(), card_combs.copy())
 
-    action_dict = cardsToDict(action[2], 0)
+    action_dict = cardsToDict(list(action.cards), 0)
     _ = action_dict.pop('total')
     keys = list(action_dict.keys())
 
     for key in keys:
         card_dict[key] -= action_dict[key]
         card_dict['total'] -= action_dict[key]
+    
+    print(card_dict['total'])
 
     new_combs = list()
     fail_combs = list()
@@ -1174,6 +1183,8 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
     wild_card = getWildCard(level)
     
     for comb in all_combs:
+        if comb.is_pass():
+            continue
         value = 2 if CombBase.actionComparision(comb, base_action, level) else 1
         type_index = TypeIndex[comb.t]
         if type_index == 8:
@@ -1194,9 +1205,9 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
                 else:
                     flags[9][comb.rank - 1] = value
             else:
-                flags[type_index + base][comb.rank - 1] = value
+                flags[type_index][comb.rank - 1] = value
         else:
-            flags[type_index + base][comb.rank] = value
+            flags[type_index][comb.rank - 1] = value
     return flags
 
 def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild_card : str) -> List[List[int]]:
@@ -1225,7 +1236,7 @@ def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild
     
     return flags
 
-def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], actions : List[CardComb], wild_card : str) -> CardComb:
+def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], all_combs : List[CardComb], actions : List[CardComb], level : int) -> CardComb:
     '''
     This function returns the best choice given the action base is ThreeWithTwo.
     
@@ -1233,6 +1244,29 @@ def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], actions : List[CardCo
     Calculate the final score after choosing each action, and return the action with highest score.
     The weight Matrix is still in progress, but you can use @var ScoreWeights before the update.
     '''
+    current_score = -1
+    current_wild_card_num = 3
+    final_action : Optional[CardComb] = None
+    wild_card = getWildCard(level)
+    
+    for action in actions:
+        wild_card_num = action.cards.count(wild_card)
+        if wild_card_num < current_wild_card_num:
+            _, updated_combs = updateCardCombsAfterAction(all_combs, card_dict.copy(), action)
+            flags = getFlagsForActions(updated_combs, CardComb.pass_cardcomb(), level, True)
+            score = scoreOfCombs(flags)
+            current_score = score
+            final_action = action
+            current_wild_card_num = wild_card_num
+        elif wild_card_num == current_wild_card_num:
+            _, updated_combs = updateCardCombsAfterAction(all_combs, card_dict.copy(), action)
+            flags = getFlagsForActions(updated_combs, CardComb.pass_cardcomb(), level, True)
+            score = scoreOfCombs(flags)
+            if score > current_score:
+                current_score = score
+                final_action = action
+    
+    return final_action
 
 def getChoiceUnderAction(card_dict : Dict[str, int], actions : List[CardComb], wild_card : str) -> CardComb:
     answer : Optional[CardComb] = None
@@ -1250,6 +1284,19 @@ def getChoiceUnderAction(card_dict : Dict[str, int], actions : List[CardComb], w
                 answer = action
                 highest_score = score
     return answer
+
+def scoreOfCombs(flags : List[List[int]]) -> int:
+    score = 0
+    for i in range(len(flags)):
+        if i == 18:
+            score += ScoreWeights[i][0] * min(1, flags[i][0])
+        else:
+            flag = flags[i]
+            weights = [ScoreWeights[i][0] + ScoreWeights[i][1] * a for a in range(15)]
+            for j in range(15):
+                temp = 1 if flag[j] > 0 else 0
+                score += (temp * weights[j])
+    return score
 
 def scoreOfSraightFlushFlags(flags : List[List[int]]) -> int:
     score = 0
@@ -1269,7 +1316,7 @@ def checkCardCombTypeRank(cardcomb : CardComb, base : Union[CardComb, CombBase])
 def assignCombBaseToProbs(probs : List[float], indices : List[int], base_action : CombBase, level : int) -> List[Tuple[CombBase, float]]:
     answer = list()
     for i in range(194):
-        if i == 0 and not base_action.is_pass():
+        if i == 0 and (base_action is None or base_action.is_pass()):
             answer.append((CombBase.pass_comb(), probs[i]))
         elif indices[i] == 1:
             comb = indexToCombBase(i)
@@ -1334,5 +1381,14 @@ def indexToCombBase(index : int) -> CombBase:
     raise ValueError("@param index is invalid!")
 
 if __name__ == "__main__":
-    index = 188
-    print(indexToCombBase(index))
+    d1 = getCardDict()
+    addCardToDict(d1, ['H2', 'D2', 'S2', 'H3', 'H3', 'C3', 'C4', 'C5', 'C6', 'C7'])
+    level = 13
+
+    combs = findAllCombs(d1, level)
+    
+    threewithtwo_combs = list(filter(lambda comb : comb.t == 'ThreeWithTwo' and comb.rank == 1, combs))
+    
+    final_action = getChoiceUnderThreeWithTwo(d1, combs, threewithtwo_combs, level)
+    
+    print(final_action)

@@ -43,14 +43,17 @@ class CombBase:
         return CombBase('Bomb', 16, 4)
     
     @staticmethod
-    def actionComparision(action : object, base : object, level : int) -> bool:
+    def actionComparision(action : Optional[object], base : Optional[object], level : int) -> bool:
         '''
         If @param action can be played given the last action is @param base, it returns True; Else it returns False.
         '''
-        if not (isinstance(action, CombBase) and isinstance(base, CombBase)):
-            raise ValueError("@param action and @param base both must be instances of @class CardComb!")
-        if base.is_pass():
+        # if not (isinstance(action, CombBase) and isinstance(base, CombBase)):
+        #     print(f"action = {action}")
+        #     print(f"base = {base}")
+        if base is None or base.is_pass():
             return not action.is_pass()
+        if action is None or action.is_pass():
+            return base is not None and not base.is_pass()
         if base.is_joker_bomb() or action.is_joker_bomb():
             if (base.rank == action.rank) or base.rank == 16:
                 return False

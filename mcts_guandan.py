@@ -18,6 +18,31 @@ def softmax(x):
     probs /= np.sum(probs)
     return probs
 
+def reshaping_array(my_states : Tuple[np.ndarray, np.ndarray], oppo_states : Tuple[np.ndarray, np.ndarray],
+        last_action : Tuple[np.ndarray, np.ndarray], level : np.ndarray)\
+            -> Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    answer = list()
+    
+    t = list()
+    t.append(np.reshape(my_states[0], (1, 70)))
+    t.append(np.reshape(my_states[1], (1, 16, 15, 1)))
+    answer.append(tuple(t))
+    t.clear()
+    
+    t.append(np.reshape(oppo_states[0], (1, 70)))
+    t.append(np.reshape(oppo_states[1], (1, 16, 15, 1)))
+    answer.append(tuple(t))
+    t.clear()
+    
+    t.append(np.reshape(last_action[0], (1, 17)))
+    t.append(np.reshape(last_action[1], (1, 15)))
+    answer.append(tuple(t))
+    t.clear()
+    
+    answer.append(np.reshape(level, (1, 13)))
+    
+    return tuple(answer)
+
 class TreeNode(object):
     """A node in the MCTS tree.
 
@@ -122,13 +147,15 @@ class MCTS(object):
         # Evaluate the leaf using a network which outputs a list of
         # (action, probability) tuples p and also a score v in [-1, 1]
         # for the current player.
-        my_states = cards.current_states(cards.current_player)
-        oppo_states = cards.current_states(3 - cards.current_player)
+        my_states = cards.current_states(True)
+        oppo_states = cards.current_states(False)
         last_action = cards.last_move_list()
         current_level = cards.level_list()
         
+        temp = reshaping_array(my_states, oppo_states, last_action, current_level)
+        
         # Shape: (1, ...)
-        action_probs, leaf_value = self._policy(my_states, oppo_states, last_action, current_level)
+        action_probs, leaf_value = self._policy(temp[0], temp[1], temp[2], temp[3])
         action_probs_list = action_probs[0].tolist()
         action_prob_tuple_list = assignCombBaseToProbs(action_probs_list, cards.current_player_comb_indices(), cards.last_move, cards.level)
         
@@ -138,6 +165,7 @@ class MCTS(object):
             node.expand(action_prob_tuple_list)
         else:
             # for end state，return the "true" leaf_value
+            print("End")
             if is_end == cards.get_current_player():
                 leaf_value = 1.0
             else:
@@ -152,9 +180,11 @@ class MCTS(object):
         state: the current game state
         temp: temperature parameter in (0, 1] controls the level of exploration
         """
-        for _ in range(self._n_playout):
+        for i in range(self._n_playout):
             state_copy = copy.deepcopy(cards)
             self._playout(state_copy)
+            # if i == self._n_playout - 1:
+            #     print(self._root._children.items())
 
         # calc the move probabilities based on visit counts at the root node
         act_visits = [(act, node._n_visits)
@@ -191,7 +221,7 @@ class MCTSPlayer(object):
     def reset_player(self):
         self.mcts.update_with_move(-1)
 
-    def get_action(self, cards : object, temp=1e-3) -> Tuple[CombBase, List[float]]:
+    def get_action(self, cards : object, temp=1e-3) -> Tuple[CombBase, np.ndarray[float]]:
         # the pi vector returned by MCTS as in the alphaGo Zero paper
         move_probs = np.zeros(194, dtype=np.float32)
         indices, acts, probs = self.mcts.get_move_probs(cards, temp)
