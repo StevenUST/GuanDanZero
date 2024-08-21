@@ -7,7 +7,7 @@ tf.compat.v1.disable_eager_execution()
 
 class GuandanNetForTwo:
 
-    def __init__(self, lr : float = 0.01, model_file=None) -> None:
+    def __init__(self, lr : float = 0.01, max_file_num : int = 4) -> None:
         self.lr = lr
         # [
             # S2, S3, S4, ... SA, 
@@ -128,19 +128,18 @@ class GuandanNetForTwo:
         self.session.run(tf.compat.v1.global_variables_initializer())
 
         # For saving and restoring
-        self.saver = tf.compat.v1.train.Saver()
-        if model_file is not None:
-            self.restore_model(model_file)
+        self.saver = tf.compat.v1.train.Saver(max_to_keep=max_file_num)
     
     def update_learning_rate(self, lr : float) -> None:
         assert lr > 0.0
         self.lr = lr
 
-    def save_model(self, model_path):
+    def save_model(self, model_path : str):
         self.saver.save(self.session, model_path)
 
-    def restore_model(self, model_path):
-        self.saver.restore(self.session, model_path)
+    def restore_model(self, base_path : str, meta_file : str):
+        new_saver = tf.compat.v1.train.import_meta_graph(f"{base_path}{meta_file}")
+        new_saver.restore(self.session, tf.train.latest_checkpoint(base_path))
     
     def policy_value_function(self, my_states : Tuple[nplist, nplist], oppo_states : Tuple[nplist, nplist], last_action : Tuple[nplist, nplist], level : nplist) -> nplist:
         return self.get_prob(my_states[0], my_states[1], oppo_states[0], oppo_states[1], last_action[0], last_action[1], level)

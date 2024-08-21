@@ -1,12 +1,11 @@
 from typing import List, Dict, Optional, Tuple, Callable
 
-from cardcomb import CardComb
+from cardcomb import CardComb, CombBase
 from utils import cardsToDict, findAllCombs, getWildCard, updateCardCombsAfterAction, generateNRandomCardLists, getChoiceUnderAction, getChoiceUnderThreeWithTwo,\
     checkCardCombTypeRank, getFlagsForActions, cardDictToModelList, indexOfCombBase
 
 from random import randint
 from mcts_guandan import MCTSPlayer
-
 from numpy import ndarray as nplist, ascontiguousarray, float32 as npf32, reshape
 
 class Cards(object):
@@ -138,25 +137,22 @@ class GDGame2P:
     def init_players(self, cards1: List[str], cards2: List[str], level: int) -> None:
         self.cards.init_cards(cards1, cards2, level)
 
-    def start_play(self, player1 : MCTSPlayer, player2 : MCTSPlayer) -> Tuple[List[List[nplist]], List[nplist], List[int], int, int]:
-        random_cards = generateNRandomCardLists((4, 4))
-        level = randint(3, 3)
+    def start_self_play(self, player : MCTSPlayer) -> Tuple[List[List[nplist]], List[nplist], List[int], int, int]:
+        random_cards = generateNRandomCardLists((12, 12))
+        level = randint(1, 13)
         self.init_players(random_cards[0], random_cards[1], level)
         states, mcts_probs, current_players = [], [], []
         data_count = 0
         while not self.game_over():
-            if self.cards.current_player == 1:
-                action_base, action_probs = player1.get_action(self.cards)
-            else:
-                action_base, action_probs = player2.get_action(self.cards)
-            
+            action_base, action_probs = player.get_action(self.cards)
+
             # Store data
             my_states = self.cards.current_states(True)
             oppo_states = self.cards.current_states(False)
             last_action = self.cards.last_move_list()
             current_level = self.cards.level_list()
             
-            states.append([my_states[0], my_states[1], oppo_states[0], oppo_states, last_action[0], last_action[1], current_level])
+            states.append([my_states[0], reshape(my_states[1], (16, 15, 1)), oppo_states[0], reshape(oppo_states[1], (16, 15, 1)), last_action[0], last_action[1], current_level])
             mcts_probs.append(action_probs)
             current_players.append(self.cards.current_player)
             data_count += 1
@@ -172,7 +168,35 @@ class GDGame2P:
             else:
                 choice : CardComb = getChoiceUnderAction(player_data[0], choices, getWildCard(level))
             self.cards.do_action(choice)
+        player.reset_player()
         return (states, mcts_probs, current_players, self.cards.has_a_winner(), data_count)
+
+    def start_play_against_other(self, player : MCTSPlayer, baseline_player : MCTSPlayer) -> int:
+        random_cards = generateNRandomCardLists((2, 2))
+        level = randint(1, 1)
+        self.init_players(random_cards[0], random_cards[1], level)
+        action_base : Optional[CombBase] = None
+        
+        while not self.game_over():
+            print(f"game_over = {self.game_over()}")
+            if self.cards.current_player == 1:
+                action_base = player.get_action(self.cards, need_prob=False)
+            else:
+                action_base = baseline_player.get_action(self.cards, need_prob=False)
+            
+            player_data = self.cards.get_player_status(self.cards.current_player)
+            choices : List[CardComb] = list(filter(lambda comb : checkCardCombTypeRank(comb, action_base), player_data[1]))
+            choice : Optional[CardComb] = None
+            
+            # Get the choice under the given action
+            if action_base.t == "ThreeWithTwo":
+                choice : CardComb = getChoiceUnderThreeWithTwo(player_data[0], player_data[1], choices, level)
+            else:
+                choice : CardComb = getChoiceUnderAction(player_data[0], choices, getWildCard(level))
+            self.cards.do_action(choice)
+        player.reset_player()
+        baseline_player.reset_player()
+        return 1 if self.cards.has_a_winner() == 1 else -1
 
     def game_over(self) -> bool:
         return self.cards.has_a_winner() > 0

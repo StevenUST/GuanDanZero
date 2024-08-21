@@ -1,8 +1,6 @@
-from typing import List, Dict, Final, Optional, Tuple, Union, Iterable, Callable
-from time import time
+from typing import List, Dict, Final, Optional, Tuple, Union, Iterable
 from itertools import combinations, product
-from numpy import random, ndarray as nplist
-
+from numpy import random
 from cardcomb import CardComb, CombBase, isLargerThanRank
 
 import copy
@@ -23,11 +21,11 @@ TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'Thre
                                      'TwoTrips' : 4, 'ThreePairs' : 5, 'Straight' : 6, 'StraightFlush' : 7,
                                      'Bomb' : 8}
 
-TypeNums : Final[List[Union[Tuple[str, int], Tuple[str, int, int]]]] = [('PASS', 1), 
-                                                                        ('Single', 15), ('Pair', 15), ('Trip', 13),('ThreeWithTwo', 13),\
-                                                                        ('TwoTrips', 13), ('ThreePairs', 12), ('Straight', 10),\
-                                                                        ('Bomb', 4, 13), ('Bomb', 5, 13), ('StraightFlush', 10), ('Bomb', 6, 13),\
-                                                                        ('Bomb', 7, 13), ('Bomb', 8, 13), ('Bomb', 9, 13), ('Bomb', 10, 13), ('Bomb', 11, 1)]
+TypeNums : Final[List[Tuple[str, int, int]]] = [('PASS', 0, 1), 
+                                                ('Single', 1, 15), ('Pair', 2, 15), ('Trip', 3, 13),('ThreeWithTwo', 5, 13),\
+                                                ('TwoTrips', 6, 13), ('ThreePairs', 6, 12), ('Straight', 5, 10),\
+                                                ('Bomb', 4, 13), ('Bomb', 5, 13), ('StraightFlush', 5, 10), ('Bomb', 6, 13),\
+                                                ('Bomb', 7, 13), ('Bomb', 8, 13), ('Bomb', 9, 13), ('Bomb', 10, 13), ('JOKERBOMB', 4, 1)]
 
 AllTypes : Final[int] = 223
 
@@ -47,12 +45,6 @@ SuitToNum: Final[Dict[str, int]] = {
 NumToSuit: Final[Dict[int, str]] = {
     0: 'S', 1: 'H', 2: 'C', 3: 'D'
 }
-
-def inRange(val : int, lower : int, upper : int) -> bool:
-    '''
-    Return whether val is in [lower, upper).
-    '''
-    return val >= lower and val < upper
 
 def stageNum(num_of_card : int) -> int:
     if num_of_card >= 20:
@@ -423,15 +415,6 @@ def findAllCombs(card_dict: Dict[str, int], level: int) -> List[CardComb]:
             all_combs.append(new_joker_bomb)
 
     return all_combs
-
-def changeToCardComb(action : List[str], ctype : str) -> CardComb:
-    if ctype == 'Single':
-        return CardComb('Single', numOfCard(action[0]) - 1, action)
-    if ctype == 'Pair':
-        return CardComb('Pair', numOfCard(action[0]) - 1, action)
-
-def changeToCardCombList(actions : List[List]) -> List[CardComb]:
-    pass
 
 def findAllSingles(card_dict: Dict[str, int]) -> List[List[str]]:
     singles = list()
@@ -1061,8 +1044,6 @@ def updateCardCombsAfterAction(card_combs: List[CardComb], card_dict: Dict[str, 
     for key in keys:
         card_dict[key] -= action_dict[key]
         card_dict['total'] -= action_dict[key]
-    
-    print(card_dict['total'])
 
     new_combs = list()
     fail_combs = list()
@@ -1313,10 +1294,10 @@ def checkCardCombTypeRank(cardcomb : CardComb, base : Union[CardComb, CombBase])
     else:
         return cardcomb.t == base.t and cardcomb.rank == base.rank and len(cardcomb.cards) == base.cards_num
 
-def assignCombBaseToProbs(probs : List[float], indices : List[int], base_action : CombBase, level : int) -> List[Tuple[CombBase, float]]:
+def assignCombBaseToProbs(probs : List[float], indices : List[int], base_action : Optional[CombBase], level : int) -> List[Tuple[CombBase, float]]:
     answer = list()
     for i in range(194):
-        if i == 0 and (base_action is None or base_action.is_pass()):
+        if i == 0 and isinstance(base_action, CombBase) and not base_action.is_pass():
             answer.append((CombBase.pass_comb(), probs[i]))
         elif indices[i] == 1:
             comb = indexToCombBase(i)
@@ -1332,7 +1313,7 @@ def indexOfCombBase(comb : CombBase) -> int:
     index = TypeIndex[comb.t]
     base = 0
     if index < 7:
-        base = sum(data[1] for data in TypeNums[0:index + 1])
+        base = sum(data[-1] for data in TypeNums[0:index + 1])
     elif index == 7:
         base = 118
     else:
@@ -1346,49 +1327,45 @@ def indexOfCombBase(comb : CombBase) -> int:
 def indexToCombBase(index : int) -> CombBase:
     if index == 0:
         return CombBase.pass_comb()
-    if index == 193:
+    elif index == 193:
         return CombBase.jokerbomb_comb()
-    if index < 16:
-        return CombBase('Single', index, 1)
-    if index < 31:
-        return CombBase('Pair', index - 15, 2)
-    if index < 44:
-        return CombBase('Trip', index - 30, 3)
-    if index < 57:
-        return CombBase('ThreeWithTwo', index - 43, 5)
-    if index < 70:
-        return CombBase('TwoTrips', index - 56, 6)
-    if index < 82:
-        return CombBase('ThreePairs', index - 69, 6)
-    if index < 92:
-        return CombBase('Straight', index - 81, 5)
-    if index < 105:
-        return CombBase('Bomb', index - 91, 4)
-    if index < 118:
-        return CombBase('Bomb', index - 104, 5)
-    if index < 128:
-        return CombBase('StraightFlush', index - 117, 5)
-    if index < 141:
-        return CombBase('Bomb', index - 127, 6)
-    if index < 154:
-        return CombBase('Bomb', index - 140, 7)
-    if index < 167:
-        return CombBase('Bomb', index - 153, 8)
-    if index < 180:
-        return CombBase('Bomb', index - 166, 9)
-    if index < 193:
-        return CombBase('Bomb', index - 179, 10)
-    raise ValueError("@param index is invalid!")
+    t = 0
+    while True:
+        data = TypeNums[t]
+        if index - data[-1] < 0:
+            break
+        else:
+            index -= data[-1]
+            t += 1
+    data = TypeNums[t]
+    return CombBase(data[0], index + 1, data[1])
 
 if __name__ == "__main__":
-    d1 = getCardDict()
-    addCardToDict(d1, ['H2', 'D2', 'S2', 'H3', 'H3', 'C3', 'C4', 'C5', 'C6', 'C7'])
-    level = 13
-
-    combs = findAllCombs(d1, level)
+    '''
+    For Testing Only!
+    '''
+    # bases = []
+    # bases.append(CombBase.pass_comb())
+    # bases.append(CombBase("Single", 1, 1))
+    # bases.append(CombBase("Pair", 1, 2))
+    # bases.append(CombBase("Trip", 1, 3))
+    # bases.append(CombBase("ThreeWithTwo", 1, 5))
+    # bases.append(CombBase("TwoTrips", 1, 6))
+    # bases.append(CombBase("ThreePairs", 1, 6))
+    # bases.append(CombBase("Straight", 1, 5))
+    # bases.append(CombBase("Bomb", 1, 4))
+    # bases.append(CombBase("Bomb", 1, 5))
+    # bases.append(CombBase("StraightFlush", 1, 5))
+    # bases.append(CombBase("Bomb", 1, 6))
+    # bases.append(CombBase("Bomb", 1, 7))
+    # bases.append(CombBase("Bomb", 1, 8))
+    # bases.append(CombBase("Bomb", 1, 9))
+    # bases.append(CombBase("Bomb", 1, 10))
+    # bases.append(CombBase.jokerbomb_comb())
     
-    threewithtwo_combs = list(filter(lambda comb : comb.t == 'ThreeWithTwo' and comb.rank == 1, combs))
+    # indices = [indexOfCombBase(base) for base in bases]
     
-    final_action = getChoiceUnderThreeWithTwo(d1, combs, threewithtwo_combs, level)
+    # new_bases = [indexToCombBase(index) for index in indices]
     
-    print(final_action)
+    # for i in range(len(new_bases)):
+    #     assert new_bases[i] == bases[i]

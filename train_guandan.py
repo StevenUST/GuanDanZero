@@ -8,27 +8,26 @@ An implementation of the training pipeline of AlphaZero for Gomoku
 from __future__ import print_function
 import random
 import numpy as np
-from typing import List
+from typing import Final
 from collections import deque
 from time import time as get_time
-# from game import Board, Game
-# from mcts_pure import MCTSPlayer as MCTS_Pure
 from mcts_guandan import MCTSPlayer
-# from policy_value_net import PolicyValueNet  # Theano and Lasagne
-# from policy_value_net_pytorch import PolicyValueNet  # Pytorch
-# from policy_value_net_tensorflow import PolicyValueNet # Tensorflow
-# from policy_value_net_keras import PolicyValueNet # Keras
 from guandan_net_tensorflow import GuandanNetForTwo
 from guandan_game import GDGame2P
 
 class TrainPipeline():
+    
+    base_path : Final[str] = "./saved_model/"
+    model_name_base : Final[str] = "GDModel2P_v1"
+    zfill_size : Final[int] = 7
+    
     def __init__(self):
         # training params
-        self.game_batch_num = 1
-        self.guandan_model = GuandanNetForTwo()
+        self.game_batch_num = 5
+        self.guandan_model = GuandanNetForTwo(max_file_num=2)
+        self.baseline_model = GuandanNetForTwo()
         self.game = GDGame2P()
-        self.mcts_player1 = MCTSPlayer(self.guandan_model.policy_value_function, c_puct=5, n_playout=300)
-        self.mcts_player2 = MCTSPlayer(self.guandan_model.policy_value_function, c_puct=5, n_playout=300)
+        self.mcts_player = MCTSPlayer(self.guandan_model.policy_value_function, c_puct=5, n_playout=25)
         self.epoch_num = 10000
         self.episode_len = 0
         
@@ -36,13 +35,18 @@ class TrainPipeline():
         self.train_batch = 2
         self.buffer_size = 10000
         self.training_data = deque(maxlen=self.buffer_size)
-        self.train_time = 5
         self.check_freq = 1
+        self.train_time = 0
+        
+        self.best_win_ratio = -1.0
+        self.best_model_index = 0
+        
+        self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time), TrainPipeline.zfill_size)}")
 
     def collect_selfplay_data(self, game_round : int = 1):
         """collect self-play data for training in one game episode"""
         for _ in range(game_round):
-            states, mcts_probs, current_players, winner, size = self.game.start_play(self.mcts_player1, self.mcts_player2)
+            states, mcts_probs, current_players, winner, size = self.game.start_self_play(self.mcts_player)
             self.episode_len = size
             for j in range(size):
                 data = list()
@@ -54,65 +58,81 @@ class TrainPipeline():
                 self.training_data.append(data)
                 
 
-    def policy_update(self) -> np.ndarray:
+    def policy_update(self, repeat_time : int = 3) -> np.ndarray:
         """update the policy-value net"""
-        mini_batch = random.sample(self.training_data, self.train_batch)
-
-        self_state_batch1 = [data[0] for data in mini_batch]
-        self_state_batch2 = [data[1] for data in mini_batch]
-        oppo_state_batch1 = [data[2] for data in mini_batch]
-        oppo_state_batch2 = [data[3] for data in mini_batch]
-        print(oppo_state_batch2)
-        last_action_batch1 = [data[4] for data in mini_batch]
-        last_action_batch2 = [data[5] for data in mini_batch]
-        level_batch = [data[6] for data in mini_batch]
-        mcts_probs_batch = [data[7] for data in mini_batch]
-        winner_batch = [data[8] for data in mini_batch]
+        if len(self.training_data) == 0:
+            raise BufferError("The data buffer is empty!")
+        random.shuffle(self.training_data)
+        mini_batch = list()
+        num = 0
+        size = min(len(self.training_data), self.train_batch)
+        
+        while num < size:
+            mini_batch.append(self.training_data.pop())
+            num += 1
+            
+        self_state_batch1, self_state_batch2, oppo_state_batch1, oppo_state_batch2, last_action_batch1, last_action_batch2,\
+            level_batch, mcts_probs_batch, winner_batch = [], [], [], [], [], [], [], [], []
+            
+        for data in mini_batch:
+            self_state_batch1.append(data[0])
+            self_state_batch2.append(data[1])
+            oppo_state_batch1.append(data[2])
+            oppo_state_batch2.append(data[3])
+            last_action_batch1.append(data[4])
+            last_action_batch2.append(data[5])
+            level_batch.append(data[6])
+            mcts_probs_batch.append(data[7])
+            winner_batch.append(data[8])
+        print("Start Training!")
         t = get_time()
         losses = list()
-        for _ in range(self.train_time):
+        for _ in range(repeat_time):
             loss = self.guandan_model.train_step(self_state_batch1, self_state_batch2, oppo_state_batch1, oppo_state_batch2,
                                                         last_action_batch1, last_action_batch2, level_batch, mcts_probs_batch, winner_batch)
             losses.append(loss)
-        print(f"Training time = {(get_time() - t) / self.train_time}")
+            print(f"[prob_loss, value_loss] = {loss.tolist()}")
+        print(f"Training Batch = {size}; Training time = {get_time() - t} seconds!")
         return losses
-
-    def policy_evaluate(self, n_games=10):
+    
+    def policy_evaluate_previous_model(self, n_games : int = 2) -> float:
         """
-        Evaluate the trained policy by playing against the pure MCTS player
+        Evaluate the trained policy by playing against the previous model
         Note: this is only for monitoring the progress of training
         """
-        pass
-        # return win_ratio
+        self.baseline_model.restore_model(TrainPipeline.base_path, f"{TrainPipeline.model_name_base}_{str.zfill(str(self.best_model_index), TrainPipeline.zfill_size)}.meta")
+        baseline_player = MCTSPlayer(self.baseline_model.policy_value_function, n_playout=25)
+        
+        win_time = 0
+        win_ratio = 0.0
+        
+        for i in range(n_games):
+            result = self.game.start_play_against_other(self.mcts_player, baseline_player)
+            if result == 1:
+                win_time += 1
+            if i == n_games - 1:
+                win_ratio = float(win_time) / float(n_games)
+                break
+        return win_ratio
 
     def run(self):
         """run the training pipeline"""
         try:
-            save_time = 0
             for i in range(self.game_batch_num):
                 print(f"Now it is batch {i + 1}!")
                 self.collect_selfplay_data(self.play_batch_size)
-                print("batch i:{}, episode_len:{}".format(
-                        i+1, self.episode_len))
+                print("batch i:{}, episode_len:{}".format(i+1, self.episode_len))
                 if len(self.training_data) > self.train_batch:
-                    losses = self.policy_update()
-                # # check the performance of the current model,
-                # # and save the model params
+                    _ = self.policy_update()
                 if (i+1) % self.check_freq == 0:
                     print("current self-play batch: {}".format(i+1))
-                    # win_ratio = self.policy_evaluate()
-                    self.guandan_model.save_model(f'./saved_model/guandan_model_v1_{save_time}.model')
-                    save_time += 1
-                #     if win_ratio > self.best_win_ratio:
-                #         print("New best policy!!!!!!!!")
-                #         self.best_win_ratio = win_ratio
-                #         # update the best_policy
-                #         self.policy_value_net.save_model('./best_policy.model')
-                #         if (self.best_win_ratio == 1.0 and
-                #                 self.pure_mcts_playout_num < 5000):
-                #             self.pure_mcts_playout_num += 1000
-                #             self.best_win_ratio = 0.0
-                pass
+                    win_ratio = self.policy_evaluate_previous_model()
+                    print(f"win_ratio = {win_ratio}")
+                    if win_ratio > self.best_win_ratio:
+                        self.best_win_ratio = win_ratio
+                        self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
+                        self.train_time += 1
+                        self.best_model_index = self.train_time
         except KeyboardInterrupt:
             print('\n\rquit')
 
