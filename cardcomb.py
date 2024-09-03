@@ -13,6 +13,8 @@ def isLargerThanRank(r1: int, r2: int, level: Optional[int]) -> bool:
     '''
     return @param r1 > @param r2 base on @param level
     '''
+    if r1 == r2:
+        return False
     if level is None or r1 == 0 or r2 == 0:
         return r1 > r2
     else:
@@ -47,11 +49,8 @@ class CombBase:
         '''
         If @param action can be played given the last action is @param base, it returns True; Else it returns False.
         '''
-        # if not (isinstance(action, CombBase) and isinstance(base, CombBase)):
-        #     print(f"action = {action}")
-        #     print(f"base = {base}")
         if base is None or base.is_pass():
-            return not action.is_pass()
+            return action is not None and not action.is_pass()
         if action is None or action.is_pass():
             return base is not None and not base.is_pass()
         if base.is_joker_bomb() or action.is_joker_bomb():

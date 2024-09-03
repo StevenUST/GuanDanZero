@@ -9,7 +9,7 @@ network to guide the tree search and evaluate the leaf nodes
 import numpy as np
 import copy
 
-from typing import Callable, Dict, Tuple, List, Iterable, Union
+from typing import Callable, Dict, Tuple, List, Iterable, Union, Optional
 from cardcomb import CombBase
 from utils import assignCombBaseToProbs, indexOfCombBase
 
@@ -25,12 +25,12 @@ def reshaping_array(my_states : Tuple[np.ndarray, np.ndarray], oppo_states : Tup
     
     t = list()
     t.append(np.reshape(my_states[0], (1, 70)))
-    t.append(np.reshape(my_states[1], (1, 16, 15, 1)))
+    t.append(np.reshape(my_states[1], (1, 240)))
     answer.append(tuple(t))
     t.clear()
     
     t.append(np.reshape(oppo_states[0], (1, 70)))
-    t.append(np.reshape(oppo_states[1], (1, 16, 15, 1)))
+    t.append(np.reshape(oppo_states[1], (1, 240)))
     answer.append(tuple(t))
     t.clear()
     
@@ -67,13 +67,19 @@ class TreeNode(object):
             if action not in self._children:
                 self._children[action] = TreeNode(self, prob)
 
-    def select(self, c_puct):
+    def select(self, cards : object, c_puct) -> Tuple[CombBase, object]:
         """Select action among children that gives maximum action value Q
         plus bonus u(P).
         Return: A tuple of (action, next_node)
         """
-        return max(self._children.items(),
-                   key=lambda act_node: act_node[1].get_value(c_puct))
+        data = list()
+        for item in self._children.items():
+            if CombBase.actionComparision(item[0], cards.last_move, cards.level):
+                data.append(item)
+        
+        # data = list(filter(lambda temp : CombBase.actionComparision(temp[0], cards.last_move, cards.level), self._children.items()))
+        
+        return max(data, key=lambda act_node: act_node[1].get_value(c_puct))
 
     def update(self, leaf_value : float):
         """Update node values from leaf evaluation.
@@ -113,10 +119,8 @@ class TreeNode(object):
 
 class MCTS(object):
     """An implementation of Monte Carlo Tree Search."""
-    
-    Time : int = 0
 
-    def __init__(self, policy : Callable, c_puct : int = 5, n_playout : int = 300):
+    def __init__(self, policy : Callable, c_puct : int = 5, n_playout : int = 300, side_policy : Optional[Callable] = None):
         """
         policy_value_fn: a function that takes in a board state and outputs
             a list of (action, probability) tuples and also a score in [-1, 1]
@@ -142,7 +146,7 @@ class MCTS(object):
             if node.is_leaf():
                 break
             # Greedily select next move.
-            action, node = node.select(self._c_puct)
+            action, node = node.select(cards, self._c_puct)
             cards.do_action(action)
 
         # Evaluate the leaf using a network which outputs a list of
@@ -159,11 +163,20 @@ class MCTS(object):
         action_probs, leaf_value = self._policy(temp[0], temp[1], temp[2], temp[3])
         action_probs_list = action_probs[0].tolist()
         action_prob_tuple_list = assignCombBaseToProbs(action_probs_list, cards.current_player_comb_indices(), cards.last_move, cards.level)
+        total_p = sum([data[1] for data in action_prob_tuple_list])
+        final_tuple_list = list()
+        if total_p == 0.0:
+            d = len(action_prob_tuple_list)
+            for t in action_prob_tuple_list:
+                final_tuple_list.append((t[0], 1.0 / d))
+        else:
+            for t in action_prob_tuple_list:
+                final_tuple_list.append((t[0], t[1] / total_p))
         
         # Check for end of game.
         is_end = cards.has_a_winner()
         if is_end == 0:
-            node.expand(action_prob_tuple_list)
+            node.expand(final_tuple_list)
         else:
             # for end state，return the "true" leaf_value
             if is_end == cards.get_current_player():
@@ -188,10 +201,19 @@ class MCTS(object):
         act_visits = [(act, node._n_visits)
                       for act, node in self._root._children.items()]
         acts, visits = zip(*act_visits)
-        acts_index = [indexOfCombBase(act) for act in acts]
-        act_probs = softmax(1.0/temp * np.log(np.array(visits) + 1e-10))
+        
+        acts_index = list()
+        final_acts = list()
+        visits_list = list()
+        
+        for i in range(len(acts)):
+            if CombBase.actionComparision(acts[i], cards.last_move, cards.level) and cards.can_current_player_play_combbase(acts[i]):
+                final_acts.append(acts[i])
+                acts_index.append(indexOfCombBase(acts[i]))
+                visits_list.append(visits[i])
 
-        return acts_index, acts, act_probs
+        act_probs = softmax(1.0/temp * np.log(np.array(visits_list) + 1e-10))
+        return acts_index, final_acts, act_probs
 
     def update_with_move(self, last_move : CombBase):
         """Step forward in the tree, keeping everything we already know
@@ -231,6 +253,7 @@ class MCTSPlayer(object):
             acts,
             p=0.9*probs + 0.1*np.random.dirichlet(0.1*np.ones(len(probs)))
         )
+        print(f"Player{cards.current_player} does move {action}")
         self.mcts.update_with_move(action)
         if need_prob:
             return action, move_probs

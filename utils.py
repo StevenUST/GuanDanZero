@@ -1,6 +1,6 @@
 from typing import List, Dict, Final, Optional, Tuple, Union, Iterable
 from itertools import combinations, product
-from numpy import random
+from numpy import random, mean, std
 from cardcomb import CardComb, CombBase, isLargerThanRank
 
 import copy
@@ -85,32 +85,6 @@ def isLegalCard(card: str) -> bool:
         elif number not in CardNumToNum.keys():
             return False
         return True
-
-def addCardToDict(cards: Union[str, List[str]], card_dict: Dict[str, int]) -> bool:
-    if isinstance(cards, str):
-        if isLegalCard(cards):
-            card_dict[cards] += 1
-            if card_dict[cards] <= 2:
-                card_dict['total'] += 1
-                return True
-            else:
-                card_dict[cards] = 2
-                return False
-        else:
-            return False
-    elif isinstance(cards, Iterable):
-        all_fine = True
-        for card in cards:
-            if isinstance(card, str) and isLegalCard(card):
-                card_dict[card] += 1
-                if card_dict[card] > 2:
-                    all_fine = False
-                    card_dict[card] = 2
-                else:
-                    card_dict['total'] += 1
-            else:
-                all_fine = False
-        return all_fine
 
 def cardToNum(card: str) -> int:
     if isLegalCard(card):
@@ -1029,7 +1003,7 @@ def updateCardDictAfterAction(card_dict: Dict[str, int], action: Optional[CardCo
     return answer
 
 def updateCardCombsAfterAction(card_combs: List[CardComb], card_dict: Dict[str, int], action: Optional[CardComb]) -> Tuple[List[CardComb], List[CardComb]]:
-    if action == None:
+    if action == None or action.is_pass():
         return (list(), card_combs.copy())
 
     contain_action = any(action == c for c in card_combs)
@@ -1191,6 +1165,12 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
             flags[type_index][comb.rank - 1] = value
     return flags
 
+def flattenFlags(flags : List[List[int]]) -> List[int]:
+    answer = list()
+    for flag in flags:
+        answer.extend(flag)
+    return answer
+
 def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild_card : str) -> List[List[int]]:
     temp_dict = copy.copy(card_dict)
     
@@ -1213,7 +1193,7 @@ def getFlagsForStraightFlush(card_dict : Dict[str, int], action : CardComb, wild
             suit = suitOfStraightFlush(sf, wild_card)
             power = powerOfStraight(sf, wild_card)
             rank = 1 if power == 'A' else numOfCard(f"S{power}")
-            flags[SUITS.index(suit) * 10][rank - 1] = 1
+            flags[SUITS.index(suit)][rank - 1] = 1
     
     return flags
 
@@ -1225,46 +1205,53 @@ def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], all_combs : List[Card
     Calculate the final score after choosing each action, and return the action with highest score.
     The weight Matrix is still in progress, but you can use @var ScoreWeights before the update.
     '''
-    current_score = -1
-    current_wild_card_num = 3
-    final_action : Optional[CardComb] = None
-    wild_card = getWildCard(level)
+    if len(actions) == 1:
+        return actions[0]
+    
+    scores = list()
     
     for action in actions:
-        wild_card_num = action.cards.count(wild_card)
-        if wild_card_num < current_wild_card_num:
-            _, updated_combs = updateCardCombsAfterAction(all_combs, card_dict.copy(), action)
-            flags = getFlagsForActions(updated_combs, CardComb.pass_cardcomb(), level, True)
-            score = scoreOfCombs(flags)
-            current_score = score
-            final_action = action
-            current_wild_card_num = wild_card_num
-        elif wild_card_num == current_wild_card_num:
-            _, updated_combs = updateCardCombsAfterAction(all_combs, card_dict.copy(), action)
-            flags = getFlagsForActions(updated_combs, CardComb.pass_cardcomb(), level, True)
-            score = scoreOfCombs(flags)
-            if score > current_score:
-                current_score = score
-                final_action = action
+        _, updated_combs = updateCardCombsAfterAction(all_combs, card_dict.copy(), action)
+        flags = getFlagsForActions(updated_combs, CardComb.pass_cardcomb(), level, True)
+        score = scoreOfCombs(flags)
+        scores.append(score)
+    
+    average = mean(scores)
+    standard_deviation = std(scores)
+    
+    for i in range(len(scores)):
+        if float(scores[i]) < average - standard_deviation * 1.2:
+            scores[i] = 0.0
+    
+    total = sum(scores)
+    weights = [s / total for s in scores]
+    final_action = random.choice(actions, p=weights)
     
     return final_action
 
 def getChoiceUnderAction(card_dict : Dict[str, int], actions : List[CardComb], wild_card : str) -> CardComb:
-    answer : Optional[CardComb] = None
-    lowest_wild_card_num : int = 3
-    highest_score : int = -1
+    if len(actions) == 1:
+        return actions[0]
+    
+    final_action : Optional[CardComb] = None
+    scores = list()
     for action in actions:
         flags_sf = getFlagsForStraightFlush(card_dict, action, wild_card)
         score = scoreOfSraightFlushFlags(flags_sf)
-        wcn = action.num_wild_card(wild_card)
-        if wcn < lowest_wild_card_num:
-            answer = action
-            highest_score = score
-        elif wcn == lowest_wild_card_num:
-            if score > highest_score:
-                answer = action
-                highest_score = score
-    return answer
+        scores.append(score)
+    
+    average = mean(scores)
+    standard_deviation = std(scores)
+    
+    for i in range(len(scores)):
+        if float(scores[i]) < average - standard_deviation * 1.2:
+            scores[i] = 0.0
+    
+    total = sum(scores)
+    weights = [s / total for s in scores]
+    final_action = random.choice(actions, p=weights)
+    
+    return final_action
 
 def scoreOfCombs(flags : List[List[int]]) -> int:
     score = 0
@@ -1277,22 +1264,21 @@ def scoreOfCombs(flags : List[List[int]]) -> int:
             for j in range(15):
                 temp = 1 if flag[j] > 0 else 0
                 score += (temp * weights[j])
+    if score == 0:
+        return 1e8
     return score
 
 def scoreOfSraightFlushFlags(flags : List[List[int]]) -> int:
-    score = 0
+    score = 10
     
     for flag in flags:
         for i in range(10):
-            score += flag[i] * (i + 1)
+            score += flag[i] * (i + 1) * 100
     
     return score
 
-def checkCardCombTypeRank(cardcomb : CardComb, base : Union[CardComb, CombBase]) -> bool:
-    if isinstance(base, CardComb):
-        return cardcomb.t == base.t and cardcomb.rank == base.rank and len(cardcomb.cards) == len(base.cards)
-    else:
-        return cardcomb.t == base.t and cardcomb.rank == base.rank and len(cardcomb.cards) == base.cards_num
+def checkCardCombTypeRank(cardcomb : CardComb, base : CombBase) -> bool:
+    return cardcomb.t == base.t and cardcomb.rank == base.rank and cardcomb.cards_num == base.cards_num
 
 def assignCombBaseToProbs(probs : List[float], indices : List[int], base_action : Optional[CombBase], level : int) -> List[Tuple[CombBase, float]]:
     answer = list()

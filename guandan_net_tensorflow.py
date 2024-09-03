@@ -39,7 +39,8 @@ class GuandanNetForTwo:
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 240])
+        # self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
         # [
             # S2, S3, S4, ... SA, 
             # H2, H3, H4, ... HA,
@@ -70,7 +71,7 @@ class GuandanNetForTwo:
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 240])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])
@@ -79,35 +80,21 @@ class GuandanNetForTwo:
         # Level (From 2 to A)
         self.current_level = tf.compat.v1.placeholder(tf.float32, shape=[None, 13])
         
-        self.my_conv_layer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.input_my_action_flags)
-        self.my_max_pool_layer1 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer1)
-        self.my_conv_layer2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.my_max_pool_layer1)
-        self.my_max_pool_layer2 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer2)
-        self.my_conv_layer3 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.my_conv_layer2)
-        self.my_max_pool_layer3 = tf.keras.layers.MaxPool2D(strides=1)(self.my_conv_layer3)
-        self.my_flatten_layer = tf.keras.layers.Flatten()(self.my_max_pool_layer3)
-        
-        self.oppo_conv_layer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.input_oppo_action_flags)
-        self.oppo_max_pool_layer1 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer1)
-        self.oppo_conv_layer2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.oppo_max_pool_layer1)
-        self.oppo_max_pool_layer2 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer2)
-        self.oppo_conv_layer3 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), activation=tf.keras.activations.relu)(self.oppo_conv_layer2)
-        self.oppo_max_pool_layer3 = tf.keras.layers.MaxPool2D(strides=1)(self.oppo_conv_layer3)
-        self.oppo_flatten_layer = tf.keras.layers.Flatten()(self.oppo_max_pool_layer3)
-        
-        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.my_flatten_layer,
-                                                         self.input_oppo_hand_card, self.oppo_flatten_layer,
+        self.layer1 = tf.keras.layers.Concatenate()([self.input_my_hand_card, self.input_my_action_flags,
+                                                         self.input_oppo_hand_card, self.input_oppo_action_flags,
                                                          self.last_move_type, self.last_move_rank, self.current_level])
         
-        self.layer2 = tf.keras.layers.Dense(units=1024, activation=tf.keras.activations.relu)(self.layer1)
+        self.layer2 = tf.keras.layers.Dense(units=512, activation=tf.keras.activations.relu)(self.layer1)
         self.layer3 = tf.keras.layers.Dense(units=512, activation=tf.keras.activations.relu)(self.layer2)
         self.layer4 = tf.keras.layers.Dense(units=256, activation=tf.keras.activations.relu)(self.layer3)
+        self.layer5 = tf.keras.layers.Dense(units=256, activation=tf.keras.activations.relu)(self.layer4)
+        self.layer6 = tf.keras.layers.Dense(units=256, activation=tf.keras.activations.relu)(self.layer5)
         
         self.q_layer2 = tf.keras.layers.Dense(units=512, activation=tf.keras.activations.relu)(self.layer1)
         self.q_layer3 = tf.keras.layers.Dense(units=128, activation=tf.keras.activations.relu)(self.q_layer2)
         self.q_layer4 = tf.keras.layers.Dense(units=32, activation=tf.keras.activations.relu)(self.q_layer3)
         
-        self.policy_prob = tf.keras.layers.Dense(units=194, activation=tf.nn.log_softmax)(self.layer4)
+        self.policy_prob = tf.keras.layers.Dense(units=194, activation=tf.nn.log_softmax)(self.layer6)
         self.q_value = tf.keras.layers.Dense(units=1, activation=tf.nn.tanh)(self.q_layer4)
         
         self.policy_prob_label = tf.compat.v1.placeholder(tf.float32, shape=[None, 194])
@@ -115,7 +102,7 @@ class GuandanNetForTwo:
         
         self.policy_loss = tf.negative(tf.reduce_mean(
                 tf.reduce_sum(tf.multiply(self.policy_prob, self.policy_prob_label), 1)))
-        self.q_loss = tf.losses.mean_squared_error(self.q_label, self.q_value)
+        self.q_loss = tf.compat.v1.losses.mean_squared_error(self.q_label, self.q_value)
         self.loss = self.policy_loss + self.q_loss
         self.learning_rate = tf.compat.v1.placeholder(tf.float32)
         self.optimizer = tf.compat.v1.train.AdamOptimizer(

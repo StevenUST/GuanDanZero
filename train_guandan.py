@@ -125,14 +125,16 @@ class TrainPipeline():
                 if len(self.training_data) > self.train_batch:
                     _ = self.policy_update()
                 if (i+1) % self.check_freq == 0:
-                    print("current self-play batch: {}".format(i+1))
-                    win_ratio = self.policy_evaluate_previous_model()
-                    print(f"win_ratio = {win_ratio}")
-                    if win_ratio > self.best_win_ratio:
-                        self.best_win_ratio = win_ratio
-                        self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
-                        self.train_time += 1
-                        self.best_model_index = self.train_time
+                    self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
+                    self.train_time += 1
+                    # print("current self-play batch: {}".format(i+1))
+                    # win_ratio = self.policy_evaluate_previous_model()
+                    # print(f"win_ratio = {win_ratio}")
+                    # if win_ratio > self.best_win_ratio:
+                    #     self.best_win_ratio = win_ratio
+                    #     self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
+                    #     self.train_time += 1
+                    #     self.best_model_index = self.train_time
         except KeyboardInterrupt:
             print('\n\rquit')
 
