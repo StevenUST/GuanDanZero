@@ -59,7 +59,7 @@ class GDNode(BaseNode):
         self.level = level
         self.current_greatest_action : Optional[CardComb] = greatest_action
         self.actions : Optional[List[CardComb]] = None
-        self.best_child_index : Optional[List] = None
+        # self.best_child_index : Optional[List] = None
 
     def add_child_node(self, child : object, action : Optional[CardComb] = None) -> None:
         if isinstance(child, GDNode):

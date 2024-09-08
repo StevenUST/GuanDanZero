@@ -3,10 +3,12 @@ from queue import Queue
 
 import tensorflow as tf
 import itertools as it
-import secrets
-import copy
+import random
+import numpy as np
 
-from utils import NumToCardNum, getWildCard, randomCardDict, getCardDict, findAllPairs, findAllCombs, filterActions, \
+from cards_sorting import CardsSorter
+
+from utils import NumToCardNum, getWildCard, randomCardDict, getCardDict, integerToCard, findAllPairs, findAllCombs, filterActions, \
     updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce, canPassOnly
 
 from guandan_tree_node import GDNode, GDResultNode
@@ -121,6 +123,35 @@ def findAll_2_2_comb(level : int = 13) -> List[Tuple[str, str]]:
     print(len(final_situation))
     
     return final_situation
+
+def generate_2_random_card_lists(m : int, n : int) -> List[List]:
+    total = m + n
+    
+    nums = list(range(0, 108, 1))
+    random.shuffle(nums)
+    
+    answer = list()
+    t1 = [integerToCard(i) for i in nums[0 : m]]
+    t2 = [integerToCard(i) for i in nums[m : total]]
+    CardsSorter.sorting_cards(t1)
+    CardsSorter.sorting_cards(t2)
+    answer.append(t1)
+    answer.append(t2)
+    
+    return answer
+
+def get_training_data_from_raw_data(data : str) -> List[np.ndarray]:
+    data = data[:-1]
+    raw_numbers = data.split("|")
+    answer = list()
+    for line in raw_numbers:
+        line = line[1:-1]
+        values = line.split(',')
+        temp = list()
+        for v in values:
+            temp.append(float(v))
+        answer.append(np.array(temp, dtype=np.float32))
+    return answer
 
 def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : int) -> Tuple[GDNode, List[GDNode]]:
     '''
@@ -419,6 +450,7 @@ def print_node_group(node_group : List[Optional[GDResultNode]]) -> None:
     print(t)
 
 if __name__ == "__main__":
+    pass
     d1 = getCardDict()
     d2 = getCardDict()
     
@@ -431,16 +463,6 @@ if __name__ == "__main__":
     _ = addCardToDict(d1, ['S7', 'S9', 'HT'])
     
     top_node, leaf_nodes = simulate_two_card_dicts(d1, d2, level)
-    
-    # dummy_top_node, leaf_nodes = build_dummy_result_tree()
-    
-    # top_node2 = update_search_tree(leaf_nodes)
-    
-    # print(top_node2.node_index)
-    
-    # result_top_node, leaf_nodes = build_result_tree(top_node)
-    
-    # top_node2 = update_search_tree(leaf_nodes)
     
     r = top_node.update_recursively()
     

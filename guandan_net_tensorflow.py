@@ -18,7 +18,7 @@ class GuandanNetForTwo:
             # #2, #3, #4, ... #A,
             # #WC, #ALL, #STAGE
         # ]
-        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
+        self.input_my_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 69])
         # (Flag for each action)
         # (Remark: '-' implies always 0 because such action does not exist)
         # (Given the last action is A. If the action can be played freely, value is 1; If the action can be played after action A, value is 2)
@@ -39,7 +39,7 @@ class GuandanNetForTwo:
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 240])
+        self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
         # self.input_my_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 16, 15, 1])
         # [
             # S2, S3, S4, ... SA, 
@@ -50,7 +50,7 @@ class GuandanNetForTwo:
             # #2, #3, #4, ... #A,
             # #WC, #ALL, #STAGE
         # ]
-        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 70])
+        self.input_oppo_hand_card = tf.compat.v1.placeholder(tf.float32, shape=[None, 69])
         # (Flag for each action)
         # (Remark: '-' implies always 0 because such action does not exist)
         # (Given the last action is A. If the action can be played freely, value is 1; If the action can be played after action A, value is 2)
@@ -71,7 +71,7 @@ class GuandanNetForTwo:
             # Bomb(10)      [2, 3, 4, ... A, -, -]
             # JOKERBOMB(Remark: If JOKERBOMB exists, the vector is [2, 2, 2, ..., 2] with length of 15. Else it is all zero)
         # ]
-        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 240])
+        self.input_oppo_action_flags = tf.compat.v1.placeholder(tf.float32, shape=[None, 193])
         
         # (PASS, Single, Pair, Trip, ThreePairs, TwoTrips, ThreeWithTwo, Straight, StraightFlush, Bomb(4-10), JOKERBOMB)
         self.last_move_type = tf.compat.v1.placeholder(tf.float32, shape=[None, 17])

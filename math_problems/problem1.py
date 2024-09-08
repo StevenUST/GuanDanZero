@@ -23,4 +23,4 @@ def comb_of_question1(N : int, M : int, K : int) -> int:
     return answer
 
 if __name__ == "__main__":
-    print("{:.3g}".format(comb_of_question1(27, 27, 2)))
+    print("{:.3g}".format(comb_of_question1(4, 54, 2)))

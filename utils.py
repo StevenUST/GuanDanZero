@@ -100,6 +100,23 @@ def cardToNum(card: str) -> int:
     else:
         raise ValueError("The input card is illegal!")
 
+def integerToCard(val : int) -> str:
+    if val < 0:
+        val = 0
+    elif val >= 108:
+        val = 107
+    if val > 53:
+        val -= 54
+    if val > 51:
+        if val == 52:
+            return 'SB'
+        else:
+            return 'HR'
+    else:
+        suit = SUITS[val // 13]
+        num = POWERS[val % 13]
+        return suit + num   
+
 def numOfCard(card: str) -> int:
     if not isLegalCard(card):
         return -1
@@ -165,7 +182,7 @@ def cardDictToList(card_dict: Dict[str, int]) -> List[str]:
     return cards
 
 def cardDictToModelList(card_dict : Dict[str, int], level : int) -> List[int]:
-    answer = [0] * 70
+    answer = [0] * 69
     
     for i in range(15):
         power = POWERS[i]
@@ -185,7 +202,6 @@ def cardDictToModelList(card_dict : Dict[str, int], level : int) -> List[int]:
     
     answer[67] = card_dict[wild_card]
     answer[68] = card_dict['total']
-    answer[69] = stageNum(card_dict['total'])
     
     return answer
 
@@ -992,7 +1008,7 @@ def suitOfStraightFlush(straight_flush : Iterable[str], wild_card : str) -> str:
     return suit
 
 def updateCardDictAfterAction(card_dict: Dict[str, int], action: Optional[CardComb]) -> Dict[str, int]:
-    if action == None:
+    if action == None or action.is_pass():
         return card_dict.copy()
 
     answer = card_dict.copy()
@@ -1127,8 +1143,14 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
     
     def init_flags(flags : List) -> None:
         size = 19 if consider_suit_for_sf else 16
-        for _ in range(size):
-            flags.append([0] * 15)
+        for i in range(size):
+            factor = 1
+            if TypeNums[i][0] == 'StraightFlush' and consider_suit_for_sf:
+                factor = 4
+            for _ in range(factor):
+                flags.append([0] * TypeNums[i + 1][2])
+            if factor == 4:
+                i += 3
     
     flags = []
     init_flags(flags)
@@ -1144,15 +1166,14 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
         type_index = TypeIndex[comb.t]
         if type_index == 8:
             if comb.rank == 16:
-                for i in range(15):
-                    flags[15 + base][i] = 2
+                flags[15 + base][0] = 2
             else:
                 size = len(comb.cards)
                 if size < 6:
                     flags[3 + size][comb.rank - 1] = value
                 else:
                     flags[4 + size + base][comb.rank - 1] = value
-        if type_index <= 7 and type_index >= 4:
+        elif type_index <= 7 and type_index >= 4:
             if type_index == 7:
                 if consider_suit_for_sf:
                     suit = suitOfStraightFlush(comb.cards, wild_card)

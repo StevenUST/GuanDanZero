@@ -6,139 +6,214 @@ An implementation of the training pipeline of AlphaZero for Gomoku
 """
 
 from __future__ import print_function
-import random
 import numpy as np
-from typing import Final
-from collections import deque
-from time import time as get_time
-from mcts_guandan import MCTSPlayer
+from typing import Final, Tuple
 from guandan_net_tensorflow import GuandanNetForTwo
-from guandan_game import GDGame2P
+from cardcomb import CardComb
+
+from utils import cardsToDict, cardDictToModelList, findAllCombs, getFlagsForActions, flattenFlags, filterActions, updateCardCombsAfterAction, indexOfCombBase
+from utils2 import generate_2_random_card_lists, get_training_data_from_raw_data, simulate_two_card_dicts, get_progress_from_node, get_action_from_progress_nodes
 
 class TrainPipeline():
     
-    base_path : Final[str] = "./saved_model/"
-    model_name_base : Final[str] = "GDModel2P_v1"
-    zfill_size : Final[int] = 7
+    data_base_path : Final[str] = "./collected_data/basic/"
+    base_path : Final[str] = "./saved_model/basic/"
+    model_name_base : Final[str] = "GDModel2P_basic_v1"
+    zfill_size : Final[int] = 4
     
     def __init__(self):
-        # training params
-        self.game_batch_num = 5
         self.guandan_model = GuandanNetForTwo(max_file_num=2)
-        self.baseline_model = GuandanNetForTwo()
-        self.game = GDGame2P()
-        self.mcts_player = MCTSPlayer(self.guandan_model.policy_value_function, c_puct=5, n_playout=25)
-        self.epoch_num = 10000
-        self.episode_len = 0
-        
-        self.play_batch_size = 1
-        self.train_batch = 2
-        self.buffer_size = 10000
-        self.training_data = deque(maxlen=self.buffer_size)
-        self.check_freq = 1
+        self.batch_size = 32
         self.train_time = 0
-        
-        self.best_win_ratio = -1.0
-        self.best_model_index = 0
-        
         self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time), TrainPipeline.zfill_size)}")
 
-    def collect_selfplay_data(self, game_round : int = 1):
+    def collect_selfplay_data(self, num1 : int, num2 : int, level : int, size : int = 1000) -> Tuple[str, int]:
         """collect self-play data for training in one game episode"""
-        for _ in range(game_round):
-            states, mcts_probs, current_players, winner, size = self.game.start_self_play(self.mcts_player)
-            self.episode_len = size
-            for j in range(size):
-                data = list()
-                data.extend(states[j])
-                data.append(mcts_probs[j])
-                val = 1 if current_players[j] == winner else -1
-                temp = np.array([val], dtype=np.float32)
-                data.append(temp)
-                self.training_data.append(data)
-                
+        """This function returns the path of file that stores the training data"""
+        file_name = f"basic_training-({num1},{num2})-({level}).txt"
+        level_flags = [0] * 13
+        level_flags[level - 1] = 1
+        level_data = str(level_flags).replace(" ", '')
+        data_size = 0
+        with open(f"{TrainPipeline.data_base_path}{file_name}", "a") as file:
+            for _ in range(size):
+                data = generate_2_random_card_lists(num1, num2)
+                cd1 = cardsToDict(data[0])
+                cd2 = cardsToDict(data[1])
+                combs1 = findAllCombs(cd1, level)
+                combs2 = findAllCombs(cd2, level)
+                last_action : CardComb = CardComb.pass_cardcomb()
+                top_node, _ = simulate_two_card_dicts(cd1, cd2, level)
+                val = top_node.update_recursively()
+                if val == 1:
+                    progress = get_progress_from_node(top_node)
+                    final_progress = get_action_from_progress_nodes(progress)[0]
+                    for step in final_progress:
+                        if step[0] == 0:
+                            # Self-data
+                            self_condition = cardDictToModelList(cd1, level)
+                            self_action_flags = flattenFlags(getFlagsForActions(combs1, last_action, level))
+                            # Oppo-data
+                            oppo_condition = cardDictToModelList(cd2, level)
+                            oppo_action_flags = flattenFlags(getFlagsForActions(combs2, last_action, level))
+                            
+                            # LastAction-data
+                            action_type = last_action.type_index()
+                            action_type_flags = [0] * 17
+                            action_type_flags[action_type] = 1
+                            
+                            action_rank = last_action.rank
+                            action_rank_flags = [0] * 15
+                            action_rank_flags[action_rank] = 1
+                            
+                            # Prob Label
+                            comb = step[1]
+                            index = indexOfCombBase(comb)
+                            prob_label = [0.0] * 194
+                            prob_label[index] = 1.0
+                            
+                            # Generating Training Data
+                            self_data = str(self_condition).replace(" ", '')
+                            self_action_flag_data = str(self_action_flags).replace(" ", '')
+                            
+                            oppo_data = str(oppo_condition).replace(" ", '')
+                            oppo_action_flag_data = str(oppo_action_flags).replace(" ", '')
+                            
+                            action_type_data = str(action_type_flags).replace(" ", '')
+                            action_rank_data = str(action_rank_flags).replace(" ", '')
+                            
+                            prob_label_data = str(prob_label).replace(" ", '')
+                            
+                            val_data = str([round(float(val), 1)])
+                            
+                            training_data = f"{self_data}|{self_action_flag_data}|{oppo_data}|{oppo_action_flag_data}|{action_type_data}|{action_rank_data}|{level_data}|{prob_label_data}|{val_data}"
+                            file.write(f"{training_data}\n")
+                            data_size += 1
+                            
+                            _, combs1 = updateCardCombsAfterAction(combs1, cd1, comb)
+                            last_action = CardComb.pass_cardcomb() if step[1] == None else step[1]
+                        else:
+                            _, combs2 = updateCardCombsAfterAction(combs2, cd2, step[1])
+                            last_action = CardComb.pass_cardcomb() if step[1] == None else step[1]
+                else:
+                    # Self-data
+                    self_condition = cardDictToModelList(cd1, level)
+                    self_action_flags = flattenFlags(getFlagsForActions(combs1, last_action, level))
+                    # Oppo-data
+                    oppo_condition = cardDictToModelList(cd2, level)
+                    oppo_action_flags = flattenFlags(getFlagsForActions(combs2, last_action, level))
+                    # LastAction-data
+                    action_type = last_action.type_index()
+                    action_type_flags = [0] * 17
+                    action_type_flags[action_type] = 1
+                    
+                    action_rank = last_action.rank
+                    action_rank_flags = [0] * 15
+                    action_rank_flags[action_rank] = 1
+                    
+                    # Prob Label
+                    prob_label = [0.0] * 194
+                    legal_actions = filterActions(combs1, last_action, level)
+                    value = 1.0 / float(len(legal_actions))
+                    for comb in legal_actions:
+                        index = indexOfCombBase(comb)
+                        prob_label[index] = value
+                    prob_label_data = "["
+                    for val in prob_label:
+                        prob_label_data = prob_label_data + str(round(val, 4)) + ','
+                    prob_label_data = prob_label_data[:-1]
+                    prob_label_data = prob_label_data + "]"
+                    
+                    self_data = str(self_condition).replace(" ", '')
+                    self_action_flag_data = str(self_action_flags).replace(" ", '')
+                    
+                    oppo_data = str(oppo_condition).replace(" ", '')
+                    oppo_action_flag_data = str(oppo_action_flags).replace(" ", '')
+                    
+                    action_type_data = str(action_type_flags).replace(" ", '')
+                    action_rank_data = str(action_rank_flags).replace(" ", '')
+                    
+                    val_data = str([round(float(val), 1)])
+                    
+                    training_data = f"{self_data}|{self_action_flag_data}|{oppo_data}|{oppo_action_flag_data}|{action_type_data}|{action_rank_data}|{level_data}|{prob_label_data}|{val_data}"
+                    file.write(f"{training_data}\n")
+                    data_size += 1
+            file.close()
+        return (f"{TrainPipeline.data_base_path}{file_name}", data_size)
 
-    def policy_update(self, repeat_time : int = 3) -> np.ndarray:
+    def policy_update(self, trainng_file : str, data_size : int = -1, repeat_time : int = 3) -> np.ndarray:
         """update the policy-value net"""
-        if len(self.training_data) == 0:
-            raise BufferError("The data buffer is empty!")
-        random.shuffle(self.training_data)
-        mini_batch = list()
-        num = 0
-        size = min(len(self.training_data), self.train_batch)
-        
-        while num < size:
-            mini_batch.append(self.training_data.pop())
-            num += 1
-            
-        self_state_batch1, self_state_batch2, oppo_state_batch1, oppo_state_batch2, last_action_batch1, last_action_batch2,\
-            level_batch, mcts_probs_batch, winner_batch = [], [], [], [], [], [], [], [], []
-            
-        for data in mini_batch:
-            self_state_batch1.append(data[0])
-            self_state_batch2.append(data[1])
-            oppo_state_batch1.append(data[2])
-            oppo_state_batch2.append(data[3])
-            last_action_batch1.append(data[4])
-            last_action_batch2.append(data[5])
-            level_batch.append(data[6])
-            mcts_probs_batch.append(data[7])
-            winner_batch.append(data[8])
-        print("Start Training!")
-        t = get_time()
-        losses = list()
-        for _ in range(repeat_time):
-            loss = self.guandan_model.train_step(self_state_batch1, self_state_batch2, oppo_state_batch1, oppo_state_batch2,
-                                                        last_action_batch1, last_action_batch2, level_batch, mcts_probs_batch, winner_batch)
-            losses.append(loss)
-            print(f"[prob_loss, value_loss] = {loss.tolist()}")
-        print(f"Training Batch = {size}; Training time = {get_time() - t} seconds!")
-        return losses
-    
+        with open(trainng_file, "r") as f:
+            data = f.readline()
+            self_hand_card_batch = list()
+            self_action_flag_batch = list()
+            oppo_hand_card_batch = list()
+            oppo_action_flag_batch = list()
+            action_type_batch = list()
+            action_rank_batch = list()
+            level_batch = list()
+            prob_label_batch = list()
+            q_label_batch = list()
+            counter = 0
+            total_counter = 0
+            while data is not None and data != '':
+                training_data = get_training_data_from_raw_data(data)
+                
+                self_hand_card_batch.append(training_data[0])
+                self_action_flag_batch.append(training_data[1])
+                oppo_hand_card_batch.append(training_data[2])
+                oppo_action_flag_batch.append(training_data[3])
+                action_type_batch.append(training_data[4])
+                action_rank_batch.append(training_data[5])
+                level_batch.append(training_data[6])
+                prob_label_batch.append(training_data[7])
+                q_label_batch.append(training_data[8])
+                
+                counter += 1
+                total_counter += 1
+                
+                if counter == self.batch_size or total_counter == data_size:
+                    self.guandan_model.train_step(
+                        np.array(self_hand_card_batch, dtype=np.float32),
+                        np.array(self_action_flag_batch, dtype=np.float32),
+                        np.array(oppo_hand_card_batch, dtype=np.float32),
+                        np.array(oppo_action_flag_batch, dtype=np.float32),
+                        np.array(action_type_batch, dtype=np.float32),
+                        np.array(action_rank_batch, dtype=np.float32),
+                        np.array(level_batch, dtype=np.float32),
+                        np.array(prob_label_batch, dtype=np.float32),
+                        np.array(q_label_batch, dtype=np.float32),
+                    )
+                    self_hand_card_batch.clear()
+                    self_action_flag_batch.clear()
+                    oppo_hand_card_batch.clear()
+                    oppo_action_flag_batch.clear()
+                    action_type_batch.clear()
+                    action_rank_batch.clear()
+                    level_batch.clear()
+                    prob_label_batch.clear()
+                    q_label_batch.clear()
+                    counter = 0
+                
+                data = f.readline()
+        f.close()
+        self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(1), TrainPipeline.zfill_size)}")
+                
     def policy_evaluate_previous_model(self, n_games : int = 2) -> float:
         """
         Evaluate the trained policy by playing against the previous model
         Note: this is only for monitoring the progress of training
         """
-        self.baseline_model.restore_model(TrainPipeline.base_path, f"{TrainPipeline.model_name_base}_{str.zfill(str(self.best_model_index), TrainPipeline.zfill_size)}.meta")
-        baseline_player = MCTSPlayer(self.baseline_model.policy_value_function, n_playout=25)
-        
-        win_time = 0
-        win_ratio = 0.0
-        
-        for i in range(n_games):
-            result = self.game.start_play_against_other(self.mcts_player, baseline_player)
-            if result == 1:
-                win_time += 1
-            if i == n_games - 1:
-                win_ratio = float(win_time) / float(n_games)
-                break
-        return win_ratio
-
-    def run(self):
-        """run the training pipeline"""
-        try:
-            for i in range(self.game_batch_num):
-                print(f"Now it is batch {i + 1}!")
-                self.collect_selfplay_data(self.play_batch_size)
-                print("batch i:{}, episode_len:{}".format(i+1, self.episode_len))
-                if len(self.training_data) > self.train_batch:
-                    _ = self.policy_update()
-                if (i+1) % self.check_freq == 0:
-                    self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
-                    self.train_time += 1
-                    # print("current self-play batch: {}".format(i+1))
-                    # win_ratio = self.policy_evaluate_previous_model()
-                    # print(f"win_ratio = {win_ratio}")
-                    # if win_ratio > self.best_win_ratio:
-                    #     self.best_win_ratio = win_ratio
-                    #     self.guandan_model.save_model(f"{TrainPipeline.base_path}{TrainPipeline.model_name_base}_{str.zfill(str(self.train_time + 1), TrainPipeline.zfill_size)}")
-                    #     self.train_time += 1
-                    #     self.best_model_index = self.train_time
-        except KeyboardInterrupt:
-            print('\n\rquit')
-
+    
+    def file_size(self, file_name : str) -> int:
+        num = 0
+        with open(file_name, "rb") as f:
+            num = sum(1 for _ in f)
+        return num
 
 if __name__ == '__main__':
     training_pipeline = TrainPipeline()
-    training_pipeline.run()
+    # print(training_pipeline.file_size("/home/steventse7340/AlphaZero_Gomoku-master/collected_data/basic/basic_training-(2,2)-(1).txt"))
+    # 148677
+    # file_name, data_size = training_pipeline.collect_selfplay_data(2, 2, 1, 100000)
+    # training_pipeline.policy_update(file_name, data_size=data_size, repeat_time=3)

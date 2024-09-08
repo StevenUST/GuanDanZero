@@ -24,13 +24,13 @@ def reshaping_array(my_states : Tuple[np.ndarray, np.ndarray], oppo_states : Tup
     answer = list()
     
     t = list()
-    t.append(np.reshape(my_states[0], (1, 70)))
-    t.append(np.reshape(my_states[1], (1, 240)))
+    t.append(np.reshape(my_states[0], (1, 69)))
+    t.append(np.reshape(my_states[1], (1, 193)))
     answer.append(tuple(t))
     t.clear()
     
-    t.append(np.reshape(oppo_states[0], (1, 70)))
-    t.append(np.reshape(oppo_states[1], (1, 240)))
+    t.append(np.reshape(oppo_states[0], (1, 69)))
+    t.append(np.reshape(oppo_states[1], (1, 193)))
     answer.append(tuple(t))
     t.clear()
     
