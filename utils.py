@@ -2,6 +2,7 @@ from typing import List, Dict, Final, Optional, Tuple, Union, Iterable
 from itertools import combinations, product
 from numpy import random, mean, std
 from cardcomb import CardComb, CombBase, isLargerThanRank
+from functools import cmp_to_key
 
 import copy
 
@@ -12,8 +13,11 @@ SUITS: Final[List[str]] = ['S', 'H', 'C', 'D']
 POWERS: Final[List[str]] = ['2', '3', '4', '5', '6',
                             '7', '8', '9', 'T', 'J', 'Q', 'K', 'A', 'B', 'R']
 
+POWERS2: Final[List[str]] = ['A', '2', '3', '4', '5', '6',
+                            '7', '8', '9', 'T', 'J', 'Q', 'K']
+
 ScoreWeights : Final[List[Tuple[int]]] = [
-    (0, 1), (0, 2), (0, 3), (2, 3), (0, 6), (0, 6), (0, 5), (80, 20), (340, 20), (500, 20), (500, 20), (500, 20), (500, 20),
+    (0, 1), (0, 2), (0, 3), (2, 3), (0, 6), (0, 6), (0, 5), (80, 20), (340, 20), (500, 20),
         (600, 20), (860, 20), (1120, 20), (1380, 20), (1640, 20), (1e7, 0)
 ]
 
@@ -27,7 +31,7 @@ TypeNums : Final[List[Tuple[str, int, int]]] = [('PASS', 0, 1),
                                                 ('Bomb', 4, 13), ('Bomb', 5, 13), ('StraightFlush', 5, 10), ('Bomb', 6, 13),\
                                                 ('Bomb', 7, 13), ('Bomb', 8, 13), ('Bomb', 9, 13), ('Bomb', 10, 13), ('JOKERBOMB', 4, 1)]
 
-AllTypes : Final[int] = 223
+AllTypes : Final[int] = 193
 
 CardNumToNum: Final[Dict[str, int]] = {
     'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14, 'B': 15, 'R': 16
@@ -116,6 +120,25 @@ def integerToCard(val : int) -> str:
         suit = SUITS[val // 13]
         num = POWERS[val % 13]
         return suit + num   
+
+def integerToCardNoSuit(val : int, level : int) -> str:
+    if val < 0:
+        val = 0
+    elif val > 107:
+        val = 107
+    
+    if val > 103:
+        return "B" if val < 106 else "R"
+    
+    wild_card_nums = ((level - 1) * 8 + 6, (level - 1) * 8 + 7)
+    
+    if val in wild_card_nums:
+        return "W"
+    elif val >= 96:
+        return "A"
+    else:
+        temp = val // 8
+        return POWERS[temp]
 
 def numOfCard(card: str) -> int:
     if not isLegalCard(card):
@@ -1014,7 +1037,8 @@ def updateCardDictAfterAction(card_dict: Dict[str, int], action: Optional[CardCo
     answer = card_dict.copy()
     for card in action.cards:
         answer[card] -= 1
-        answer['total'] -= 1
+    
+    answer['total'] -= action.cards_num
 
     return answer
 
@@ -1112,6 +1136,23 @@ def filterActions(actions: List[CardComb], base_action: Optional[CardComb], leve
                         final_actions.append(action)
         return final_actions
 
+def groupActions(actions : List[CardComb]) -> List[Tuple[int, List[CardComb]]]:
+    temp_dict : Dict[int, List[CardComb]] = dict()
+    
+    for i in range(0, 194):
+        temp_dict[i] = list()
+    
+    for action in actions:
+        idx = indexOfCombBase(action)
+        temp_dict[idx].append(action)
+    
+    answer : List[Tuple[str, List[CardComb]]] = list()
+    for i in range(0, 194):
+        if len(temp_dict[i]) > 0:
+            t = (i, temp_dict[i])
+            answer.append(t)
+    return answer
+
 def passIsFine(oppo_actions: List[CardComb], oppo_card_num: int) -> bool:
     '''
     This function returns true if opponent cannot play all the card(s) in one time;\n
@@ -1122,8 +1163,8 @@ def passIsFine(oppo_actions: List[CardComb], oppo_card_num: int) -> bool:
             return False
     return True
 
-def canPassOnly(current_action: Optional[CardComb], oppo_actions: List[CardComb], level: int) -> bool:
-    if current_action is None:
+def canPassOnly(current_action: CardComb, oppo_actions: List[CardComb], level: int) -> bool:
+    if current_action.is_pass():
         return False
     filtered_actions = filterActions(oppo_actions, current_action, level)
     for action in filtered_actions:
@@ -1132,12 +1173,10 @@ def canPassOnly(current_action: Optional[CardComb], oppo_actions: List[CardComb]
     return True
 
 def canPlayAllInOnce(actions: List[CardComb], num_card: int) -> int:
-    index = -1
     for i in range(len(actions) - 1, -1, -1):
-        if not actions[i].is_pass() and len(actions[i].cards) == num_card:
-            index = i
-            break
-    return index
+        if not actions[i].is_pass() and actions[i].cards_num == num_card:
+            return i
+    return -1
 
 def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level : int, consider_suit_for_sf : bool = False) -> List[List[int]]:
     
@@ -1185,6 +1224,23 @@ def getFlagsForActions(all_combs : List[CardComb], base_action : CardComb, level
         else:
             flags[type_index][comb.rank - 1] = value
     return flags
+
+def getFlagsForActions_Flatten(all_combs : List[CardComb], base_action : CardComb, level : int) -> List[int]:
+    answer = [0] * 193
+    
+    for comb in all_combs:
+        if comb.is_pass():
+            continue
+        index = indexOfCombBase(comb) - 1
+        if answer[index] == 2:
+            continue
+        can_do_it = CombBase.actionComparision(comb, base_action, level)
+        if can_do_it:
+            answer[index] = 2
+        else:
+            answer[index] = 1
+    
+    return answer
 
 def flattenFlags(flags : List[List[int]]) -> List[int]:
     answer = list()
@@ -1274,6 +1330,63 @@ def getChoiceUnderAction(card_dict : Dict[str, int], actions : List[CardComb], w
     
     return final_action
 
+def getChoiceUnderSameAction(card_dict : Dict[str, int], actions : List[CardComb], level : int) -> CardComb:
+    
+    wild_card = getWildCard(level)
+    scores = list()
+    max_score = -100000000000000
+    
+    for action in actions:
+        wild_card_score = -100000 * action.cards.count(wild_card)
+        flag = getFlagsForStraightFlush(card_dict, action, wild_card)
+        sf_score = scoreOfSraightFlushFlags(flag)
+        total_score = wild_card_score + sf_score
+        if total_score >= max_score:
+            scores.append((action, wild_card_score + sf_score))
+            max_score = total_score
+    
+    data_tuples = list(filter(lambda data : data[1] == max_score, scores))
+    data = [val[0] for val in data_tuples]
+    
+    choice = random.choice(data)
+    return choice
+
+def getChoiceUnderThreeWithTwo(card_dict : Dict[str, int], combs : List[CardComb], actions : List[CardComb], level : int) -> CardComb:
+    scores = list()
+    max_score = -100000000000000
+    
+    for action in actions:
+        updated_actions = updateCardCombsAfterAction(combs, card_dict.copy(), action)
+        flags = getFlagsForActions_Flatten(updated_actions, CardComb.pass_cardcomb(), level)
+        score = scoreOfActions_Flatten(flags)
+        if score >= max_score:
+            scores.append((action, score))
+            max_score = score
+    
+    data_tuples = list(filter(lambda data : data[1] == max_score, scores))
+    data = [val[0] for val in data_tuples]
+    
+    choice = random.choice(data)
+    return choice
+
+def scoreOfActions_Flatten(flags : List[int]) -> int:
+    score = 0
+    current_type_index = 1
+    current_rank_index = 1
+    current_rank_index_max = TypeNums[current_type_index][-1]
+    weights = ScoreWeights[current_type_index - 1]
+    for i in range(193):
+        flag = flags[i]
+        if flag > 0:
+            score += weights[0] + weights[1] * current_rank_index
+        current_rank_index += 1
+        if current_rank_index > current_rank_index_max:
+            current_type_index += 1
+            current_rank_index = 1
+            current_rank_index_max = TypeNums[current_type_index][-1]
+            weights = ScoreWeights[current_type_index - 1]
+    return score
+
 def scoreOfCombs(flags : List[List[int]]) -> int:
     score = 0
     for i in range(len(flags)):
@@ -1313,7 +1426,7 @@ def assignCombBaseToProbs(probs : List[float], indices : List[int], base_action 
     return answer
 
 def indexOfCombBase(comb : CombBase) -> int:
-    if comb.is_pass():
+    if comb is None or comb.is_pass():
         return 0
     elif comb.is_joker_bomb():
         return 193
@@ -1346,6 +1459,27 @@ def indexToCombBase(index : int) -> CombBase:
             t += 1
     data = TypeNums[t]
     return CombBase(data[0], index + 1, data[1])
+
+def indexToTypeName(index : int) -> str:
+    if index == 0:
+        return 'PASS'
+    elif index == 193:
+        return 'JOKERBOMB'
+    t = 0
+    while True:
+        data = TypeNums[t]
+        if index - data[-1] < 0:
+            break
+        else:
+            index -= data[-1]
+            t += 1
+    data = TypeNums[t]
+    if data[0] in ['TwoTrips', 'ThreePairs', 'Straight', 'StraightFlush']:
+        return f"{data[0]}-{POWERS2[index]}"
+    elif data[0] == 'Bomb':
+        return f"{data[0]}-{data[1]}-{POWERS[index]}"
+    else:
+        return f"{data[0]}-{POWERS[index]}"
 
 if __name__ == "__main__":
     '''

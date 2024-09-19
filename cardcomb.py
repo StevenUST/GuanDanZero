@@ -5,6 +5,10 @@ NumToCardNum: Final[Dict[int, str]] = {
     10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: 'B', 16: 'R'
 }
 
+CardNumToNum: Final[Dict[str, int]] = {
+    'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14, 'B': 15, 'R': 16
+}
+
 TypeIndex : Final[Dict[str, int]] = {'Single' : 0, 'Pair' : 1, 'Trip' : 2, 'ThreeWithTwo' : 3, 
                                      'TwoTrips' : 4, 'ThreePairs' : 5, 'Straight' : 6, 'StraightFlush' : 7,
                                      'Bomb' : 8}
@@ -124,6 +128,56 @@ class CombBase:
             return False
         return self.t == other.t and self.rank == other.rank and self.cards_num == other.cards_num
 
+class CardCombNoSuit(CombBase):
+    
+    def __init__(self, ctype: str, crank: int, srank : int, num_cards: int, wc_num : int) -> None:
+        super().__init__(ctype, crank, num_cards)
+        self.srank = srank
+        self.wild_card_num : int = wc_num
+    
+    @staticmethod
+    def pass_cardcombnosuit() -> object:
+        return CardCombNoSuit('PASS', 0, 0, 0)
+    
+    @staticmethod
+    def jokerbomb_cardcombnosuit() -> object:
+        return CardCombNoSuit('Bomb', 16, 4, 0)
+
+    def to_comb_base(self) -> CombBase:
+        return CombBase(self.t, self.rank, self.srank, self.cards_num)
+    
+    def __str__(self) -> str:
+        if self.is_pass():
+            return str(['PASS', 'PASS', 'PASS'])
+        elif self.is_joker_bomb():
+            return str(['Bomb', 'JOKER', '0', str(['SB', 'SB', 'HR', 'HR'])])
+        rank = None
+        if self.t in ['Straight', 'StraightFlush']:
+            rank = NumToCardNum[self.rank]
+        else:
+            rank = NumToCardNum[self.rank + 1]
+        return str([self.t, rank, self.srank, self.wild_card_num])
+
+    def __hash__(self) -> int:
+        return hash((self.t, self.rank, self.srank, self.cards_num, self.wild_card_num))
+    
+    def __eq__(self, other : object) -> bool:
+        if not isinstance(other, CardCombNoSuit):
+            return False
+        return self.t == other.t and self.rank == other.rank and self.srank == other.srank and self.wild_card_num == other.wild_card_num
+
+    def __lt__(self, other : object) -> bool:
+        if not isinstance(other, CardCombNoSuit):
+            raise ValueError("Cannot compare @CardCombNoSuit with other type!")
+        if self.t != other.t:
+            return TypeIndex[self.t] < TypeIndex[other.t]
+        elif self.rank != other.rank:
+            return self.rank < other.rank
+        elif self.wild_card_num != other.wild_card_num:
+            return self.wild_card_num < other.wild_card_num
+        else:
+            return self.srank < other.srank
+
 class CardComb(CombBase):
     
     def __init__(self, ctype : str, crank : int, cards : Iterable[str]) -> None:
@@ -147,6 +201,17 @@ class CardComb(CombBase):
     
     def to_comb_base(self) -> CombBase:
         return CombBase(self.t, self.rank, self.cards_num)
+    
+    def to_comb_no_suit(self, wild_card : str) -> CardCombNoSuit:
+        num_wild_card = self.cards.count(wild_card)
+        srank = 0
+        if self.t == 'ThreeWithTwo':
+            r = self.cards[3][1]
+            if r.isnumeric():
+                srank = int(r) - 1
+            else:
+                srank = CardNumToNum[r] - 1
+        return CardCombNoSuit(self.t, self.rank, srank, self.cards_num, num_wild_card)
     
     def __str__(self) -> str:
         if self.is_pass():

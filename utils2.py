@@ -1,15 +1,16 @@
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union, Iterable
 from queue import Queue
 
 import tensorflow as tf
 import itertools as it
 import random
 import numpy as np
+import pandas as pd
 
 from cards_sorting import CardsSorter
 
-from utils import NumToCardNum, getWildCard, randomCardDict, getCardDict, integerToCard, findAllPairs, findAllCombs, filterActions, \
-    updateCardDictAfterAction, passIsFine, addCardToDict, canPlayAllInOnce, canPassOnly
+from utils import SUITS, POWERS, NumToCardNum, cardsToDict, getCardDict, integerToCard, integerToCardNoSuit, findAllPairs, findAllCombs, filterActions, \
+    updateCardDictAfterAction, passIsFine, canPlayAllInOnce, canPassOnly
 
 from guandan_tree_node import GDNode, GDResultNode
 
@@ -81,48 +82,19 @@ def cardDictToListWithMode(card_dict : Dict[str, int], mode : int, level : int) 
     else:
         raise ValueError("@param mode must be either 0, 1 or 2.")
 
-def findAll_2_2_comb(level : int = 13) -> List[Tuple[str, str]]:
-    wild_card = getWildCard(level)
-    card_dict = randomCardDict(108)
-    temp = findAllPairs(card_dict, wild_card)
-    all_pairs : List[Tuple[str, str]] = list()
+def generate_all_2_2_comb() -> Iterable[Tuple[Tuple, Tuple]]:
+    r = range(0, 108, 1)
+    N = 2
+    layer1 = it.combinations(r, N)
     
-    for pair in temp:
-        new_pair = []
-        if pair[0] == wild_card:
-            new_pair.append("*")
-        else:
-            new_pair.append(pair[0])
-        if pair[1] == wild_card:
-            new_pair.append("*")
-        else:
-            new_pair.append(pair[1])
-        all_pairs.append(tuple(new_pair))
-    
-    all_situations = list(it.product(all_pairs, all_pairs.copy()))
-    
-    final_situation = list()
-
-    for situation in all_situations:
-        # situation = ((...,...),(...,...))
-        legal = True
-        counter = dict()
-        temp = situation[0] + situation[1]
-        for card in temp:
-            if card in counter:
-                if counter[card] == 2:
-                    legal = False
-                    break
-                else:
-                    counter[card] += 1
-            else:
-                counter[card] = 1
-        if legal:
-            final_situation.append(situation)
-    
-    print(len(final_situation))
-    
-    return final_situation
+    for comb1 in layer1:
+        r1 = list(range(0, 108, 1))
+        r2 = list(filter(lambda val : not (val in comb1), r1))
+        layer2 = it.combinations(r2, N)
+        for comb2 in layer2:
+            result1 = tuple([integerToCardNoSuit(val) for val in comb1])
+            result2 = tuple([integerToCardNoSuit(val) for val in comb2])
+            yield (result1, result2)
 
 def generate_2_random_card_lists(m : int, n : int) -> List[List]:
     total = m + n
@@ -153,11 +125,76 @@ def get_training_data_from_raw_data(data : str) -> List[np.ndarray]:
         answer.append(np.array(temp, dtype=np.float32))
     return answer
 
+def get_indices_of_expected_actions(probs : np.ndarray, reverse : bool = True) -> List[int]:
+    N = np.count_nonzero(probs > 0.0)
+    indices : List[int] = np.argpartition(probs, -N)[-N:].tolist()
+    if reverse:
+        indices.reverse()
+    return indices
+
+def get_indices_of_predicted_actions(probs : np.ndarray, num : int, reverse : bool = True) -> List[int]:
+    indices : List[int] = np.argpartition(probs, -num)[-num:].tolist()
+    if reverse:
+        indices.reverse()
+    return indices
+
+def get_training_data_from_csv(file_name : str) -> List[np.ndarray]:
+    pass
+
+def name_of_columns_csv() -> List[str]:
+    answer = list()
+
+    for p in POWERS:
+        if not (p in ['B', 'R']):
+            for suit in SUITS:
+                answer.append(f"{suit}{p}")
+        elif p == 'B':
+            answer.append('SB')
+        else:
+            answer.append('HR')
+    
+    answer.append("Total")
+    answer.append("Probs")
+    answer.append("Q_value")
+    
+    return answer
+
+def create_new_csv_file(base_path : str, file_name : str) -> Tuple[pd.DataFrame, List[str]]:
+    df = pd.DataFrame()
+    
+    columns = name_of_columns_csv()
+    
+    for i in range(len(columns)):
+        if i < 55:
+            df[columns[i]] = pd.Series(dtype=np.int32)
+        elif i == 55:
+            df[columns[i]] = pd.Series(dtype=str)
+        else:
+            df[columns[i]] = pd.Series(dtype=np.float32)
+    
+    df.to_csv(f"{base_path}{file_name}.csv")
+    return (df, columns)
+
+def map_val_to_name(names : List[str], values : List[List[Union[int, str, float]]]) -> Dict[str, List[Union[int, str, float]]]:
+    assert len(names) == len(values[0])
+    
+    d : Dict[str, List[Union[int, str, float]]] = dict()
+    for i in range(len(names)):
+        name = names[i]
+        d[name] = list()
+    
+    for j in range(len(values)):
+        value = values[j]
+        for k in range(len(value)):
+            d[names[k]].append(value[k])
+    
+    return d
+
 def simulate_two_card_dicts(cd1 : Dict[str, int], cd2 : Dict[str, int], level : int) -> Tuple[GDNode, List[GDNode]]:
     '''
     This function returns the result of player1 use @param cd1 to play against player2 with @param cd2.\n
     @output the top node and all leaf nodes, which is sorted by their layers in ascending order.\n
-    If player1 wins player2 in some way, the reward of top node is 1; Else, the reward of top node is -1 \
+    If player1 wins player2 in some way, the reward of top node is 1; Else, the reward of top node is -1
         (player1 cannot win player2 even if player1 plays first).
     '''
     node_queue = Queue()
@@ -451,27 +488,3 @@ def print_node_group(node_group : List[Optional[GDResultNode]]) -> None:
 
 if __name__ == "__main__":
     pass
-    d1 = getCardDict()
-    d2 = getCardDict()
-    
-    level = 13
-    
-    # hand card1 = [H3, H7]
-    _ = addCardToDict(d2, ['S5', 'S7', 'H4'])
-
-    # hand card2 = [H5, D5]
-    _ = addCardToDict(d1, ['S7', 'S9', 'HT'])
-    
-    top_node, leaf_nodes = simulate_two_card_dicts(d1, d2, level)
-    
-    r = top_node.update_recursively()
-    
-    if r == 1:
-        progress = get_progress_from_node(top_node)
-        final_progress = get_action_from_progress_nodes(progress)
-        for p in final_progress:
-            print("==========")
-            print(p)
-            print("*********")
-    else:
-        print("Player0 cannot win Player1")

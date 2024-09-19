@@ -52,16 +52,15 @@ class BaseNode(object):
 
 class GDNode(BaseNode):
     
-    def __init__(self, index : int, node_index : int, card_dict1 : Dict[str, int], card_dict2 : Dict[str, int], layer : int, level : int, greatest_action : Optional[CardComb] = None):
-        super().__init__(index, node_index, layer)
+    def __init__(self, p_index : int, node_index : int, card_dict1 : Dict[str, int], card_dict2 : Dict[str, int], layer : int, greatest_action : CardComb = CardComb.pass_cardcomb()):
+        super().__init__(p_index, node_index, layer)
         self.card_dict1 = card_dict1
         self.card_dict2 = card_dict2
-        self.level = level
-        self.current_greatest_action : Optional[CardComb] = greatest_action
+        self.current_greatest_action : CardComb = greatest_action
         self.actions : Optional[List[CardComb]] = None
         # self.best_child_index : Optional[List] = None
 
-    def add_child_node(self, child : object, action : Optional[CardComb] = None) -> None:
+    def add_child_node(self, child : object, action : CardComb = CardComb.pass_cardcomb()) -> None:
         if isinstance(child, GDNode):
             if self.children is None:
                 self.children = list()
@@ -132,9 +131,9 @@ class GDNode(BaseNode):
             return r
 
     def __str__(self) -> str:
-        answer = f"{self.player_index}, "
+        answer = f"player = {self.player_index}\n"
         answer += str(self.card_dict1)
-        answer += ', '
+        answer += '\n'
         answer += str(self.card_dict2)
         
         return answer
